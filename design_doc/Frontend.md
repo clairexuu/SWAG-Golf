@@ -1,0 +1,1 @@
+A web application with a three-panel layout featuring a left-side style selector, center chat input for comfortable natural language interaction, and right-side sketch grid with quick actions for downloading, regenerating, and flagging outputs.

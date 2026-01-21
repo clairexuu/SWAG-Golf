@@ -1,0 +1,1 @@
+A retrieval-augmented generation system that hard-filters the reference image database by the designer's selected style, then retrieves top-K semantically similar images using embeddings to ensure exact stylistic fidelity in generated concept sketches.

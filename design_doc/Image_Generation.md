@@ -1,0 +1,1 @@
+Uses Nano Banana as a model-agnostic image generation service that receives compiled prompt specifications and RAG-retrieved reference images through an adapter layer to produce sketch-only concept drawings optimized for designer draw-over workflows.
