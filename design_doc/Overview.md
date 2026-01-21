@@ -45,28 +45,72 @@ Adapter Layer: Converts Prompt Spec → model-specific format
 
 ## Folder Structure
 
+### CLI version
+
+```text
+├── main.py                 # CLI entry
+│
+├── pipeline.py             # orchestration
+│
+├── prompt/
+│   ├── compiler.py         # GPT prompt compiler
+│   ├── schema.py           # PromptSpec dataclass
+│   └── system_prompt.txt
+│
+├── style/
+│   ├── registry.py         # StyleRegistry
+│   ├── types.py
+│   └── styles/
+│       └── designerA/
+│           └── vintage_mascot/
+│               └── style.json
+│
+├── rag/
+│   └── (later)
+│
+└── generate/
+    └── nano_banana.py      # (later)
+```
+
+### Full structure expected 
+
+```text
 concept_sketch_agent/
-├── app/
-│   └── main.py                 # CLI for now
+├── intelligence/                    # Python
+│   ├── app/
+│   │   └── UI/UX
+│   │
+│   ├── core/
+│   │   ├── prompt/
+│   │   ├── style/
+│   │   ├── rag/
+│   │   ├── generate/
+│   │   ├── guardrails/
+│   │   └── feedback/
+│   │
+│   ├── services/
+│   │   └── pipeline.py             
 │
-├── core/
-│   ├── prompt/
-│   │   ├── compiler.py         # GPT prompt compiler
-│   │   ├── schema.py           # PromptSpec dataclass + validation
-│   │   └── system_prompt.txt
-│
-│   ├── style/
-│   │   ├── registry.py         # StyleRegistry
-│   │   ├── types.py            # Style dataclass
-│   │   └── styles/
-│   │       └── designerA/
-│   │           └── vintage_mascot/
-│   │               └── style.json
-│
-│   └── rag/
-│       └── 
-│
-├── services/
-│   └── pipeline.py             # Orchestration 
+├── control/                         # TypeScript：API, UI
+│   ├── api/
+│   │   ├── server.ts                # HTTP API (wrap Python)
+│   │   └── routes/
+│   │       └── generate.ts
+│   │
+│   ├── pipeline/
+│   │   └── orchestrator.ts          # TS orchestration
+│   │
+│   ├── frontend/                    # Web app
+│   │   ├── src/
+│   │   └── package.json
+│   │
+│   ├── electron/
+│   │   ├── main.ts                  # Electron main process
+│   │   └── preload.ts
+│   │
+│   └── shared/
+│       └── schema/                  # JSON Schema (single source of truth)
+│           └── prompt_spec.json
 │
 └── README.md
+```
