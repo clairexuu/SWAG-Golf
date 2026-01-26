@@ -1,0 +1,36 @@
+{
+  "name": "swag-concept-sketch-electron",
+  "version": "1.0.0",
+  "description": "Electron wrapper for SWAG Concept Sketch Agent",
+  "main": "dist/main.js",
+  "scripts": {
+    "dev": "tsc && NODE_ENV=development electron .",
+    "build": "tsc && electron-builder",
+    "build:mac": "tsc && electron-builder --mac",
+    "build:win": "tsc && electron-builder --win"
+  },
+  "dependencies": {
+    "electron-store": "^8.1.0"
+  },
+  "devDependencies": {
+    "electron": "^28.1.4",
+    "electron-builder": "^24.9.1",
+    "@types/node": "^20.11.5",
+    "typescript": "^5.3.3"
+  },
+  "build": {
+    "appId": "com.swag.concept-sketch-agent",
+    "productName": "SWAG Concept Sketch Agent",
+    "files": [
+      "dist/**/*",
+      "../frontend/dist/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.graphics-design",
+      "target": ["dmg", "zip"]
+    },
+    "win": {
+      "target": ["nsis", "zip"]
+    }
+  }
+}

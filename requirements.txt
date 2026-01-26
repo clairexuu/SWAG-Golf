@@ -1,0 +1,21 @@
+# SWAG Concept Sketch Agent - Python Dependencies
+
+# Core dependencies
+Pillow>=10.0.0
+
+# OpenAI API (for prompt compilation)
+openai>=1.0.0
+
+# Future ML/embedding dependencies (currently placeholder implementations)
+# Uncomment when integrating real models:
+# torch>=2.0.0
+# transformers>=4.30.0
+# clip @ git+https://github.com/openai/CLIP.git
+
+# Development dependencies
+jupyter>=1.0.0
+ipython>=8.0.0
+
+# Testing (future)
+# pytest>=7.0.0
+# pytest-asyncio>=0.21.0

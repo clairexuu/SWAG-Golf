@@ -9,6 +9,12 @@ The system is explicitly designed to:
 - Enforce exact stylistic fidelity
 - Optimize for speed and concept throughput, not final polish
 
+## Current Version — MVP
+- Single designer
+- 3–5 styles
+- RAG-based reference retrieval
+- Sketch-only generation
+
 ## Backend Workflow
 1. Raw User Input
 2. User make Style Selection from Style Library, used for downstream retrieval and generation
@@ -16,18 +22,6 @@ The system is explicitly designed to:
 4. RAG from image database, hard-filter by Style then retrieve top-K by semantic similarity
 5. Image Generation: Prompt Specification (step 3) and Retrieved Reference Images (step 4) are sent to Nano Banana (model-agnostic via adapter layer)
 6. Output & Iteration: User can download, draw over, or provide feedback on the output image
-
-## Frontend
-Web app with the following Layout
-- Left Panel
-    - Style Selector (primary control)
-    - Optional experimental toggle
-- Center Panel
-    - Large chat input
-    - Comfortable typing experience
-- Right Panel
-    - Sketch grid
-    - Quick actions (download, regenerate, flag)
 
 ## Technical Architecture
 Frontend: Web app
@@ -37,80 +31,28 @@ Image Model: Nano Banana (model-agnostic via adapter layer)
 Storage: Reference image DB + embeddings
 Adapter Layer: Converts Prompt Spec → model-specific format
 
-## Phase 1 — MVP
-- Single designer
-- 3–5 styles
-- RAG-based reference retrieval
-- Sketch-only generation
+## Directory
+User Prompt Compilation --> @design_doc/Input_to_Prompt.md
+Style Selection --> @design_doc/Style_Selection.md
+RAG --> @design_doc/RAG.md
+Image Generation --> @design_doc/Image_Generation.md
+Frontend --> @design_doc/Frontend.md
+
+To Run --> @design_doc/Get_Started.md
+Issue and Progress Tracker --> @design_doc/Tracker.md
 
 ## Folder Structure
 
-### CLI version
-
 ```text
-├── main.py                 # CLI entry
+├── control/                # Frontend 
 │
-├── pipeline.py             # orchestration
+├── prompt/                 # User Prompt Compilation
 │
-├── prompt/
-│   ├── compiler.py         # GPT prompt compiler
-│   ├── schema.py           # PromptSpec dataclass
-│   └── system_prompt.txt
+├── style/                  # Style Selection
 │
-├── style/
-│   ├── registry.py         # StyleRegistry
-│   ├── types.py
-│   └── styles/
-│       └── designerA/
-│           └── vintage_mascot/
-│               └── style.json
+├── rag/                    # RAG
 │
-├── rag/
-│   └── (later)
+└── generate/               # Image Generation 
 │
-└── generate/
-    └── nano_banana.py      # (later)
-```
-
-### Full structure expected 
-
-```text
-concept_sketch_agent/
-├── intelligence/                    # Python
-│   ├── app/
-│   │   └── UI/UX
-│   │
-│   ├── core/
-│   │   ├── prompt/
-│   │   ├── style/
-│   │   ├── rag/
-│   │   ├── generate/
-│   │   ├── guardrails/
-│   │   └── feedback/
-│   │
-│   ├── services/
-│   │   └── pipeline.py             
-│
-├── control/                         # TypeScript：API, UI
-│   ├── api/
-│   │   ├── server.ts                # HTTP API (wrap Python)
-│   │   └── routes/
-│   │       └── generate.ts
-│   │
-│   ├── pipeline/
-│   │   └── orchestrator.ts          # TS orchestration
-│   │
-│   ├── frontend/                    # Web app
-│   │   ├── src/
-│   │   └── package.json
-│   │
-│   ├── electron/
-│   │   ├── main.ts                  # Electron main process
-│   │   └── preload.ts
-│   │
-│   └── shared/
-│       └── schema/                  # JSON Schema (single source of truth)
-│           └── prompt_spec.json
-│
-└── README.md
+└── generated_outputs/      # Store outputs
 ```
