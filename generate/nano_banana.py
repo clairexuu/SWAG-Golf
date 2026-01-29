@@ -1,9 +1,12 @@
 # generate/nano_banana.py
-from typing import List
+import os
+from typing import List, Optional
 from pathlib import Path
+from dotenv import load_dotenv
 from .adapter import ImageModelAdapter
 from .types import GenerationPayload, GenerationConfig
 from .utils import create_blank_sketch, get_timestamp, create_output_directory
+from .nano_banana_client import NanaBananaClient
 
 
 class NanaBananaAdapter(ImageModelAdapter):
@@ -14,15 +17,21 @@ class NanaBananaAdapter(ImageModelAdapter):
     For production, replace _generate_images() with actual Nano Banana API calls.
     """
 
-    def __init__(self):
+    def __init__(self, api_key: Optional[str] = None):
         """
-        Initialize Nano Banana adapter.
+        Initialize Nano Banana adapter with API client.
 
-        PLACEHOLDER: Replace with actual API client initialization.
-        Example:
-            self.client = NanaBananaClient(api_key=os.getenv("NANO_BANANA_API_KEY"))
+        Args:
+            api_key: Optional API key (defaults to environment variable)
         """
-        self.client = None  # PLACEHOLDER: Replace with actual client
+        load_dotenv()
+        try:
+            self.client = NanaBananaClient(api_key=api_key)
+            print("✓ Nano Banana client initialized")
+        except ValueError as e:
+            print(f"WARNING: {e}")
+            print("Will use placeholder images")
+            self.client = None
 
     def validate_config(self, config: GenerationConfig) -> bool:
         """
@@ -65,7 +74,7 @@ class NanaBananaAdapter(ImageModelAdapter):
         self.validate_config(payload.config)
 
         # Format prompt for Nano Banana
-        prompt = self.format_prompt(payload.prompt_spec)
+        prompt = self.format_prompt(payload.prompt_spec, payload.style)
 
         # Generate images
         return self._generate_images(
@@ -81,15 +90,7 @@ class NanaBananaAdapter(ImageModelAdapter):
         reference_images: List[str]
     ) -> List[str]:
         """
-        Internal method to generate images.
-
-        PLACEHOLDER: Replace this method with actual Nano Banana API calls.
-
-        Production implementation would:
-        1. Send prompt + reference_images to Nano Banana API
-        2. Receive generated images
-        3. Save images to disk
-        4. Return paths
+        Internal method to generate images using Nano Banana API.
 
         Args:
             prompt: Formatted prompt string
@@ -99,36 +100,46 @@ class NanaBananaAdapter(ImageModelAdapter):
         Returns:
             List of paths to generated images
         """
-        # PLACEHOLDER IMPLEMENTATION
         # Create output directory with timestamp
         timestamp = get_timestamp()
         output_dir = create_output_directory(config.output_dir, timestamp)
 
-        generated_paths = []
+        # Try real API first
+        if self.client is not None:
+            try:
+                print(f"Calling Nano Banana API...")
+                print(f"  Prompt: {prompt[:80]}...")
+                print(f"  References: {len(reference_images)}")
 
-        # Generate blank placeholder sketches
+                image_data_list = self.client.generate(
+                    prompt=prompt,
+                    reference_images=reference_images,
+                    num_images=config.num_images,
+                    resolution=config.resolution,
+                    seed=config.seed
+                )
+
+                # Save images
+                generated_paths = []
+                for i, image_data in enumerate(image_data_list):
+                    output_path = Path(output_dir) / f"sketch_{i}.png"
+                    with open(output_path, 'wb') as f:
+                        f.write(image_data)
+                    generated_paths.append(str(output_path.absolute()))
+
+                print(f"✓ Generated {len(generated_paths)} images")
+                return generated_paths
+
+            except Exception as e:
+                print(f"ERROR: Nano Banana API failed: {e}")
+                print("Falling back to placeholders...")
+
+        # Fallback: placeholder images
+        print("Using placeholder images...")
+        generated_paths = []
         for i in range(config.num_images):
-            output_path = Path(output_dir) / f"sketch_{i}.png"
+            output_path = Path(output_dir) / f"sketch_{i}_placeholder.png"
             created_path = create_blank_sketch(config.resolution, str(output_path))
             generated_paths.append(created_path)
-
-        # TODO: PRODUCTION IMPLEMENTATION
-        # Example pseudocode for future implementation:
-        #
-        # response = self.client.generate(
-        #     prompt=prompt,
-        #     reference_images=reference_images,
-        #     num_images=config.num_images,
-        #     resolution=config.resolution,
-        #     seed=config.seed,
-        #     style_strength=0.8,  # How much to follow reference images
-        #     sketch_mode=True     # Enforce sketch-only output
-        # )
-        #
-        # for i, image_data in enumerate(response.images):
-        #     output_path = Path(output_dir) / f"sketch_{i}.png"
-        #     with open(output_path, 'wb') as f:
-        #         f.write(image_data)
-        #     generated_paths.append(str(output_path.absolute()))
 
         return generated_paths

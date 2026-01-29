@@ -3,14 +3,10 @@
 export interface PromptSpec {
   intent: string;
   refinedIntent: string;
-  styleId: string;
-  visualConstraints: Record<string, any>;
-  negativeConstraints: string[];
+  negativeConstraints?: string[];
   placement?: string;
   subjectMatter?: string;
   mood?: string;
-  technique?: string;
-  fidelity?: string;
+  perspective?: string;
   compositionNotes?: string;
-  colorGuidance?: string;
 }

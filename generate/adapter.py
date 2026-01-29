@@ -37,13 +37,14 @@ class ImageModelAdapter(ABC):
         """
         pass
 
-    def format_prompt(self, prompt_spec: PromptSpec) -> str:
+    def format_prompt(self, prompt_spec: PromptSpec, style) -> str:
         """
         Convert PromptSpec to model-specific prompt string.
         Default implementation creates a comprehensive prompt.
 
         Args:
             prompt_spec: Compiled PromptSpec from prompt compiler
+            style: Style object with name, description, and visual_rules
 
         Returns:
             Formatted prompt string for image generation
@@ -59,31 +60,39 @@ class ImageModelAdapter(ABC):
         if prompt_spec.mood:
             prompt_parts.append(f"Mood: {prompt_spec.mood}")
 
-        # Add technique if specified
-        if prompt_spec.technique:
-            prompt_parts.append(f"Technique: {prompt_spec.technique}")
-
         # Add composition notes if specified
         if prompt_spec.composition_notes:
             prompt_parts.append(f"Composition: {prompt_spec.composition_notes}")
 
-        # Add visual constraints for sketch generation
-        sketch_constraints = [
-            "Style: rough sketch",
-            "black and white only",
-            "thick outlines",
-            "minimal interior detail",
-            "clean background",
-            "pencil or loose ink drawing"
-        ]
-        prompt_parts.extend(sketch_constraints)
+        # Add perspective if specified
+        if prompt_spec.perspective:
+            prompt_parts.append(f"Perspective: {prompt_spec.perspective}")
 
-        # Join all parts
+        # Join main parts
         prompt = ", ".join(prompt_parts)
+
+        # Add style information
+        prompt += f"\n\n**Style: {style.name}**\n{style.description}"
+
+        # Add visual rules from style
+        prompt += "\n\n**VISUAL RULES:**"
+        if isinstance(style.visual_rules, dict):
+            # Format dictionary as key-value pairs
+            for key, value in style.visual_rules.items():
+                if key != "additional_rules":
+                    prompt += f"\n- {key.replace('_', ' ').title()}: {value}"
+                elif isinstance(value, dict) and value:
+                    # Add additional_rules if present
+                    for rule_key, rule_value in value.items():
+                        prompt += f"\n- {rule_key.replace('_', ' ').title()}: {rule_value}"
+        else:
+            # Fallback for list format (if used in future)
+            for rule in style.visual_rules:
+                prompt += f"\n- {rule}"
 
         # Add negative constraints if any
         if prompt_spec.negative_constraints:
             negative = ", ".join(prompt_spec.negative_constraints)
-            prompt += f"\n\nAvoid: {negative}, color, gradients, textures, photorealism, typography"
+            prompt += f"\n\n**Avoid:** {negative}"
 
         return prompt

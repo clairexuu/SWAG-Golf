@@ -27,13 +27,13 @@ Usage Example:
 
     # Generate
     prompt_spec = compiler.compile("playful golf mascot", style)
-    retrieval_result = retriever.retrieve(prompt_spec, top_k=5)
+    retrieval_result = retriever.retrieve(prompt_spec, style, top_k=5)
     config = GenerationConfig(num_images=4)
 
     result = generator.generate(
         prompt_spec=prompt_spec,
         retrieval_result=retrieval_result,
-        visual_rules=style.visual_rules,
+        style=style,
         config=config
     )
 

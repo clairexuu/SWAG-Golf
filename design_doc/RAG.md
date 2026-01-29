@@ -42,16 +42,22 @@ rag/
 
 #### 2. Embedding Generation (`embedder.py`)
 
-**ImageEmbedder** - PLACEHOLDER IMPLEMENTATION
-- Currently generates random normalized 768-dimensional vectors
-- Designed for drop-in replacement with real embedding models (CLIP, OpenAI, custom vision models)
+**ImageEmbedder** - CLIP-based embedding generation
+- Generates normalized 512-dimensional vectors using CLIP ViT-B/32
+- Model configured via `CLIP_MODEL` environment variable (default: `openai/clip-vit-base-patch32`)
 - Methods:
   - `embed_image(image_path)`: Generate embedding for single image
-  - `embed_batch(image_paths)`: Batch embedding generation
-- Includes detailed TODO comments for swapping in production models
+  - `embed_batch(image_paths)`: Batch embedding generation (more efficient)
+- Supports GPU acceleration when available (automatically falls back to CPU)
 
-**Why Placeholder?**
-Allows end-to-end testing of the retrieval pipeline without ML dependencies. The interface is production-ready and can be replaced with real embeddings without changing downstream code.
+**Configuration:**
+To change the CLIP model, set `CLIP_MODEL` in your `.env` file:
+```bash
+# Use a different CLIP variant
+CLIP_MODEL=openai/clip-vit-large-patch14
+```
+
+Supported models: Any HuggingFace CLIP model identifier compatible with the `transformers` library.
 
 #### 3. Index Management (`index.py`)
 
@@ -78,7 +84,7 @@ Allows end-to-end testing of the retrieval pipeline without ML dependencies. The
 ```json
 {
   "style_id": "vintage-mascot",
-  "embedding_dim": 768,
+  "embedding_dim": 512,
   "created_at": "2026-01-25T14:30:00",
   "embeddings": [
     {
@@ -96,11 +102,11 @@ Allows end-to-end testing of the retrieval pipeline without ML dependencies. The
 - Main orchestration class for the retrieval pipeline
 - Implements style-based hard filtering and semantic ranking
 - Methods:
-  - `retrieve(prompt_spec, top_k)`: Retrieve references for a PromptSpec
+  - `retrieve(prompt_spec, style, top_k)`: Retrieve references for a PromptSpec with style object
   - `retrieve_by_text(text, style_id, top_k)`: Direct text-based retrieval
 
 **Retrieval Flow:**
-1. Extract `style_id` from PromptSpec
+1. Extract `style_id` from style object parameter
 2. Hard-filter: Get only that style's embeddings via IndexRegistry
 3. Compute query embedding (placeholder: uses first image as proxy)
 4. Calculate cosine similarity for all candidate images
@@ -141,13 +147,14 @@ from prompt.schema import PromptSpec
 prompt_spec = PromptSpec(
     intent="Cool mascot character",
     refined_intent="Playful mascot character with bold lines",
-    style_id="vintage-mascot",
-    visual_constraints={},
     negative_constraints=[]
 )
 
+# Get style object
+style = style_registry.get_style("vintage-mascot")
+
 # Retrieve top-5 reference images
-result = retriever.retrieve(prompt_spec, top_k=5)
+result = retriever.retrieve(prompt_spec, style, top_k=5)
 
 # Access results
 print(f"Retrieved {len(result.images)} images")
@@ -157,8 +164,7 @@ for img, score in zip(result.images, result.scores):
 # Convert to generation payload format
 generation_payload = {
     "prompt": prompt_spec.to_dict(),
-    "reference_images": result.to_dict(),
-    "style_constraints": style.visual_rules
+    "reference_images": result.to_dict()
 }
 ```
 
@@ -216,13 +222,12 @@ def generate_sketch(user_input: str, style_id: str):
     prompt_spec = prompt_compiler.compile(user_input, style)
 
     # 3. Retrieve reference images
-    retrieval_result = retriever.retrieve(prompt_spec, top_k=5)
+    retrieval_result = retriever.retrieve(prompt_spec, style, top_k=5)
 
     # 4. Build generation payload
     payload = {
         "prompt": prompt_spec.to_dict(),
-        "references": retrieval_result.to_dict(),
-        "style": style.visual_rules
+        "references": retrieval_result.to_dict()
     }
 
     # 5. Send to image generation (Nano Banana)

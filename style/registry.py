@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 from typing import List
-from .types import Style, VisualRules
+from .types import Style
 
 class StyleRegistry:
     """
@@ -29,25 +29,28 @@ class StyleRegistry:
         with open(path, 'r') as f:
             data = json.load(f)
 
-        # Parse visual rules
-        visual_rules_data = data.get("visual_rules", {})
-        visual_rules = VisualRules(
-            line_weight=visual_rules_data.get("line_weight", ""),
-            looseness=visual_rules_data.get("looseness", ""),
-            complexity=visual_rules_data.get("complexity", ""),
-            additional_rules=visual_rules_data.get("additional_rules", {})
-        )
-
-        # Resolve reference image paths relative to style directory
-        style_dir = self.root / style_id
+        # Resolve reference image paths relative to rag/reference_images/
+        rag_images_dir = Path("rag/reference_images")
         reference_images = [
-            str(style_dir / img) for img in data.get("reference_images", [])
+            str(rag_images_dir / img) for img in data.get("reference_images", [])
         ]
+
+        # Validate that all images exist
+        missing_images = [
+            img for img in reference_images if not Path(img).exists()
+        ]
+        if missing_images:
+            raise ValueError(
+                f"Style '{style_id}' references non-existent images: {missing_images}"
+            )
 
         # Handle optional "do not use" references
         do_not_use = data.get("do_not_use")
         if do_not_use:
-            do_not_use = [str(style_dir / img) for img in do_not_use]
+            do_not_use = [str(rag_images_dir / img) for img in do_not_use]
+
+        # Parse visual_rules (required field)
+        visual_rules = data["visual_rules"]  # Will raise KeyError if missing
 
         style = Style(
             id=style_id,

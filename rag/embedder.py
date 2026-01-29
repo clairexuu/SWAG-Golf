@@ -1,76 +1,103 @@
-import random
-from typing import List
+import os
+import torch
+from PIL import Image
+from transformers import CLIPProcessor, CLIPModel
+from typing import List, Optional
 from .utils import normalize_vector
 
 
 class ImageEmbedder:
     """
-    Generates embeddings for reference images.
+    Generates embeddings for reference images using CLIP.
 
-    PLACEHOLDER: Currently uses random vectors for testing.
-    Replace with actual embedding model (CLIP, OpenAI, or custom vision model).
+    Uses OpenAI's CLIP model to generate semantic embeddings for images.
+    Embeddings are 512-dimensional vectors (for ViT-B/32).
     """
 
-    def __init__(self, model_name: str = "placeholder", embedding_dim: int = 768):
+    def __init__(self, model_name: Optional[str] = None, embedding_dim: int = 512):
         """
-        Initialize the embedder.
+        Initialize the CLIP embedder.
 
         Args:
-            model_name: Name of the embedding model (currently placeholder)
-            embedding_dim: Dimension of embedding vectors (768 matches CLIP/common models)
+            model_name: HuggingFace model identifier for CLIP (uses CLIP_MODEL env var if not provided)
+            embedding_dim: Dimension of embedding vectors (512 for CLIP ViT-B/32)
         """
+        # Resolve model from environment or use default
+        if model_name is None:
+            model_name = os.getenv('CLIP_MODEL', 'openai/clip-vit-base-patch32')
+
         self.model_name = model_name
         self.embedding_dim = embedding_dim
 
-        # TODO: Initialize actual embedding model here
-        # Example for CLIP:
-        # from transformers import CLIPProcessor, CLIPModel
-        # self.model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
-        # self.processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+        # Load CLIP model and processor
+        print(f"Loading CLIP model: {model_name}...")
+        self.model = CLIPModel.from_pretrained(model_name)
+        self.processor = CLIPProcessor.from_pretrained(model_name)
+
+        # Move to GPU if available
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.model.to(self.device)
+        self.model.eval()  # Set to evaluation mode
+
+        print(f"✓ CLIP model loaded on {self.device}")
 
     def embed_image(self, image_path: str) -> List[float]:
         """
-        Generate embedding for a single image.
-
-        PLACEHOLDER: Returns random normalized vector.
+        Generate CLIP embedding for a single image.
 
         Args:
             image_path: Path to the image file
 
         Returns:
-            Normalized embedding vector
-
-        TODO: Replace with actual embedding logic:
-        # from PIL import Image
-        # image = Image.open(image_path)
-        # inputs = self.processor(images=image, return_tensors="pt")
-        # outputs = self.model.get_image_features(**inputs)
-        # embedding = outputs[0].detach().numpy().tolist()
-        # return normalize_vector(embedding)
+            Normalized embedding vector (512-dimensional for ViT-B/32)
         """
-        # Generate random vector
-        vector = [random.random() for _ in range(self.embedding_dim)]
-        # Normalize to unit length
-        return normalize_vector(vector)
+        # Load image
+        image = Image.open(image_path).convert("RGB")
+
+        # Preprocess image
+        inputs = self.processor(images=image, return_tensors="pt")
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+
+        # Generate embedding
+        with torch.no_grad():
+            outputs = self.model.get_image_features(**inputs)
+
+        # Handle different transformers versions
+        # Newer versions return BaseModelOutputWithPooling, older return tensor directly
+        if isinstance(outputs, torch.Tensor):
+            image_features = outputs
+        else:
+            # BaseModelOutputWithPooling - get pooler_output which is the image embedding
+            # pooler_output shape: (batch_size, hidden_size) = (1, 512)
+            image_features = outputs.pooler_output
+
+        # Convert to list and normalize
+        # image_features shape: (batch_size, hidden_size) = (1, 512)
+        # Extract first (only) embedding and convert to Python list
+        embedding = image_features[0].cpu().numpy().tolist()
+        return normalize_vector(embedding)
 
     def embed_batch(self, image_paths: List[str]) -> List[List[float]]:
         """
-        Generate embeddings for multiple images.
-
-        PLACEHOLDER: Calls embed_image for each path.
+        Generate embeddings for multiple images efficiently.
 
         Args:
             image_paths: List of paths to image files
 
         Returns:
             List of normalized embedding vectors
-
-        TODO: Implement efficient batch processing:
-        # from PIL import Image
-        # images = [Image.open(path) for path in image_paths]
-        # inputs = self.processor(images=images, return_tensors="pt", padding=True)
-        # outputs = self.model.get_image_features(**inputs)
-        # embeddings = outputs.detach().numpy().tolist()
-        # return [normalize_vector(emb) for emb in embeddings]
         """
-        return [self.embed_image(path) for path in image_paths]
+        # Load all images
+        images = [Image.open(path).convert("RGB") for path in image_paths]
+
+        # Batch preprocessing
+        inputs = self.processor(images=images, return_tensors="pt", padding=True)
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+
+        # Generate embeddings
+        with torch.no_grad():
+            image_features = self.model.get_image_features(**inputs)
+
+        # Convert to lists and normalize
+        embeddings = image_features.cpu().numpy().tolist()
+        return [normalize_vector(emb) for emb in embeddings]

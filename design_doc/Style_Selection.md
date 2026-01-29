@@ -3,16 +3,16 @@
 Designer selects a specific personal style from their Style Library.
 
 - Style selection is mandatory
-- There is no sports league selector in the UI
-- The selected style determines all downstream retrieval and generation behavior
+- Selected style determines all downstream retrieval and generation behavior
+- Each style is a separate retrieval domain
 
 ## Style Library
 
-Each designer maintains multiple discrete styles, each treated as a separate retrieval domain.
+Each designer maintains multiple discrete styles with isolated reference image sets.
 
 Each Style Includes:
 - Style Name
-- Short Description (designer-authored)
+- Description (designer-authored)
 - Visual Rules (line weight, looseness, complexity)
 - Curated Reference Image Set
 - Optional "Do Not Use" references
@@ -21,84 +21,72 @@ Each Style Includes:
 
 ### Data Types (`style/types.py`)
 
-**VisualRules**
-```python
-@dataclass
-class VisualRules:
-    line_weight: str       # e.g., "thick", "thin", "variable"
-    looseness: str         # e.g., "tight", "loose", "gestural"
-    complexity: str        # e.g., "minimal", "moderate", "detailed"
-    additional_rules: dict # Extensible for custom rules
-```
-
 **Style**
 ```python
 @dataclass
 class Style:
-    id: str                      # Unique style identifier
-    name: str                    # Display name
-    description: str             # Designer-authored description
-    visual_rules: VisualRules    # Visual characteristics
-    reference_images: List[str]  # Paths to curated reference images
-    do_not_use: List[str]        # Paths to excluded reference images (optional)
+    id: str                           # Unique style identifier
+    name: str                         # Display name
+    description: str                  # Designer-authored description
+    visual_rules: Dict[str, Any]      # Visual constraints (line_weight, looseness, complexity)
+    reference_images: List[str]       # Paths to curated reference images
+    do_not_use: Optional[List[str]]   # Paths to excluded reference images (optional)
 ```
 
 ### Style Registry (`style/registry.py`)
 
-**StyleRegistry** manages access to the Style Library with style-scoped isolation.
+**StyleRegistry** manages access to the Style Library.
 
 **Methods:**
-- `get_style(style_id: str) -> Style`
-  - Retrieves a style by ID
-  - Caches loaded styles for performance
-  - Raises `ValueError` if style not found
+- `get_style(style_id)` - Retrieve a style by ID, raises ValueError if not found
+- `list_styles()` - List all available style IDs
+- `get_all_styles()` - Retrieve all styles
+- `validate_style(style_id)` - Check if a style exists without loading it
 
-- `list_styles() -> List[str]`
-  - Returns all available style IDs
-  - Used for UI style selector population
+### Style Management (`style/init_style.py`)
 
-- `get_all_styles() -> List[Style]`
-  - Loads and returns all styles
-  - Useful for UI display with style previews
+Command-line tool for managing styles in the style library that supports
+- Create new style
+- Add images to existing style
 
-- `validate_style(style_id: str) -> bool`
-  - Checks if a style exists without loading
-  - Used for validation before downstream operations
+Then moves images to `rag/reference_images/` with UUID-based filenames
 
-**Directory Structure:**
+### Directory Structure
+
 ```
 style/style_library/
 └── {style_id}/
-    ├── style.json           # Style metadata
-    └── references/          # Reference images (optional subdirectory)
+    └── style.json           # Style metadata
+
+rag/reference_images/        # Shared reference images (UUID-named)
+├── a7f3d2e1-4b5c-6d7e.png
+├── e8c00838-0a3c-41e9.png
+└── ...
 ```
 
-**style.json Format:**
+### style.json Format
+
 ```json
 {
   "name": "Vintage Mascot",
   "description": "Bold, retro sports mascot style",
   "visual_rules": {
-    "line_weight": "thick",
-    "looseness": "loose",
-    "complexity": "moderate",
+    "line_weight": "varied",
+    "looseness": "medium",
+    "complexity": "medium",
     "additional_rules": {}
   },
   "reference_images": [
-    "references/img1.png",
-    "references/img2.png"
+    "a7f3d2e1-4b5c-6d7e.png",
+    "e8c00838-0a3c-41e9.png"
   ],
-  "do_not_use": [
-    "references/excluded1.png"
-  ]
+  "do_not_use": []
 }
 ```
 
 ## Style Enforcement
 
 - Retrieval is strictly style-scoped
-- The system never blends styles implicitly
-- Style purity is preserved by design
+- System never blends styles implicitly
 - Each style maintains isolated reference image sets
-- Cache ensures consistent style retrieval throughout session
-
+- Style purity preserved by design

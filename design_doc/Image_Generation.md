@@ -46,14 +46,14 @@ generator = ImageGenerator()
 prompt_spec = compiler.compile("playful golf mascot", style)
 
 # Retrieve reference images
-retrieval_result = retriever.retrieve(prompt_spec, top_k=5)
+retrieval_result = retriever.retrieve(prompt_spec, style, top_k=5)
 
 # Generate concept sketches
 config = GenerationConfig(num_images=4, resolution=(1024, 1024))
 result = generator.generate(
     prompt_spec=prompt_spec,
     retrieval_result=retrieval_result,
-    visual_rules=style.visual_rules,
+    style=style,
     config=config
 )
 
@@ -62,6 +62,20 @@ print(f"Generated {len(result.images)} sketches")
 print(f"Output directory: {result.timestamp}")
 print(f"Metadata: {result.metadata_path}")
 ```
+
+### Configuration
+
+**Model Selection:**
+The Gemini model is configured via the `GEMINI_MODEL` environment variable in `.env`:
+```bash
+# Default model (nano banana)
+GEMINI_MODEL=gemini-2.5-flash-image
+
+# Upgrade to pro model
+GEMINI_MODEL=gemini-3-pro-image-preview
+```
+
+The [generate/nano_banana_client.py](generate/nano_banana_client.py) automatically reads this configuration with proper fallbacks. No code changes are required to switch models—simply update the `.env` file.
 
 ### Output Structure
 
@@ -85,7 +99,6 @@ generated_outputs/
   "reference_images": ["path1.jpg", "path2.jpg"],
   "retrieval_scores": [0.95, 0.87, 0.82],
   "style_id": "vintage-mascot",
-  "visual_rules": {...},
   "config": {
     "num_images": 4,
     "resolution": [1024, 1024],

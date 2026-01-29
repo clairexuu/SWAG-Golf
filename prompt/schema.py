@@ -1,5 +1,5 @@
 # prompt/schema.py
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Dict, Optional
 
 @dataclass
@@ -12,37 +12,27 @@ class PromptSpec:
     intent: str  # Original designer input (preserved)
     refined_intent: str  # Normalized/interpreted version
 
-    # Style context
-    style_id: str
-    visual_constraints: Dict[str, any]
-
     # Constraints
-    negative_constraints: List[str]
+    negative_constraints: List[str] = field(default_factory=list)
 
     # Extracted elements
-    placement: Optional[str] = None  # e.g., "front chest", "back", "sleeve"
-    subject_matter: Optional[str] = None  # e.g., "mascot character", "abstract pattern"
-    mood: Optional[str] = None  # e.g., "playful", "vintage", "aggressive"
-    technique: Optional[str] = None  # e.g., "thick ink lines", "watercolor", "screen print"
-    fidelity: Optional[str] = None  # e.g., "rough concept", "final art", "sketch"
+    placement: Optional[str] = None         # "front chest", "back", "sleeve", ...
+    subject_matter: Optional[str] = None    # "mascot character", "abstract pattern", ...
+    mood: Optional[str] = None              # "playful", "vintage", "aggressive", ...
+    perspective: Optional[str] = None       # "3/4 view", "side view", "from above", ...
 
     # Technical parameters (model-agnostic)
     composition_notes: Optional[str] = None
-    color_guidance: Optional[str] = None
 
     def to_dict(self) -> Dict:
         """Convert to dictionary for downstream consumption."""
         return {
             "intent": self.intent,
             "refined_intent": self.refined_intent,
-            "style_id": self.style_id,
-            "visual_constraints": self.visual_constraints,
             "negative_constraints": self.negative_constraints,
             "placement": self.placement,
             "subject_matter": self.subject_matter,
             "mood": self.mood,
-            "technique": self.technique,
-            "fidelity": self.fidelity,
-            "composition_notes": self.composition_notes,
-            "color_guidance": self.color_guidance
+            "perspective": self.perspective,
+            "composition_notes": self.composition_notes
         }

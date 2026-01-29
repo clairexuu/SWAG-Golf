@@ -1,9 +1,13 @@
 # prompt/compiler.py
 import json
+import os
 from typing import Optional
 from pathlib import Path
 from openai import OpenAI
 from .schema import PromptSpec
+
+# Configuration
+TEMPERATURE = 0.7  # GPT temperature: some creativity but mostly consistent
 
 class PromptCompiler:
     """
@@ -11,18 +15,21 @@ class PromptCompiler:
     and selected style context into structured prompt specifications.
     """
 
-    def __init__(self, system_prompt: Optional[str] = None, api_key: Optional[str] = None, model: str = "gpt-4"):
+    def __init__(self, system_prompt: Optional[str] = None, api_key: Optional[str] = None, model: Optional[str] = None):
         """
         Initialize the prompt compiler with system instructions.
 
         Args:
-            system_prompt: Instructions for the LLM on how to compile prompts.
-                          If not provided, loads from prompt/system_prompt.txt
-            api_key: OpenAI API key (optional, will use environment variable if not provided)
-            model: GPT model to use for compilation
+            system_prompt: Instructions for the LLM on how to compile prompts loaded from prompt/system_prompt.txt
+            api_key: OpenAI API key, use environment variable if not provided
+            model: GPT model to use for compilation (uses GPT_MODEL env var if not provided)
         """
         if system_prompt is None:
             system_prompt = self._load_system_prompt()
+
+        # Resolve model from environment or use default
+        if model is None:
+            model = os.getenv('GPT_MODEL', 'gpt-4')
 
         self.system_prompt = system_prompt
         self.model = model
@@ -41,14 +48,15 @@ class PromptCompiler:
 
         Args:
             user_text: Raw designer input (free-form natural language)
-            style: Selected style object with id and visual_rules
+            style: Selected style object with id
 
         Returns:
             PromptSpec: Structured, model-agnostic prompt specification
         """
         # Prepare context for the LLM
         style_context = {
-            "style_id": style.id,
+            "style_name": style.name,
+            "style_description": style.description,
             "visual_rules": style.visual_rules
         }
 
@@ -62,7 +70,7 @@ class PromptCompiler:
                 {"role": "system", "content": self.system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            temperature=0.7,  # Some creativity but mostly consistent
+            temperature=TEMPERATURE,
             response_format={"type": "json_object"}
         )
 
@@ -73,16 +81,12 @@ class PromptCompiler:
         return PromptSpec(
             intent=user_text,
             refined_intent=result.get("refined_intent", user_text),
-            style_id=style.id,
-            visual_constraints=style.visual_rules,
             negative_constraints=result.get("negative_constraints", []),
             placement=result.get("placement"),
             subject_matter=result.get("subject_matter"),
             mood=result.get("mood"),
-            technique=result.get("technique"),
-            fidelity=result.get("fidelity"),
-            composition_notes=result.get("composition_notes"),
-            color_guidance=result.get("color_guidance")
+            perspective=result.get("perspective"),
+            composition_notes=result.get("composition_notes")
         )
 
     def _build_compilation_request(self, user_text: str, style_context: dict) -> str:
@@ -97,7 +101,10 @@ class PromptCompiler:
             Formatted prompt for the LLM
         """
         return f"""Designer Input: "{user_text}"
-Style Context: {json.dumps(style_context, indent=2)}
 
-[TODO: Add compilation instructions]
-"""
+Style Context:
+{json.dumps(style_context, indent=2)}
+
+Analyze this designer input and compile it into a structured prompt specification. Apply the style rules as context for interpreting the input.
+
+Output your response as a JSON object following the schema defined in the system instructions."""

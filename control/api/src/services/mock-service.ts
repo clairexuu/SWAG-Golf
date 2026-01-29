@@ -16,14 +16,11 @@ export class MockGenerationService {
     const mockPromptSpec: PromptSpec = {
       intent: request.input,
       refinedIntent: `Mock refined: ${request.input}`,
-      styleId: request.styleId,
-      visualConstraints: {},
       negativeConstraints: [],
       placement: 'center',
       subjectMatter: 'concept sketch',
       mood: 'professional',
-      technique: 'line art',
-      fidelity: 'sketch'
+      perspective: '3/4 view'
     };
 
     // Generate mock sketches

@@ -6,7 +6,6 @@ from .types import GenerationConfig, GenerationResult, GenerationPayload
 from .utils import save_metadata, get_timestamp
 from prompt.schema import PromptSpec
 from rag.types import RetrievalResult
-from style.types import VisualRules
 
 
 class ImageGenerator:
@@ -28,7 +27,7 @@ class ImageGenerator:
         self,
         prompt_spec: PromptSpec,
         retrieval_result: RetrievalResult,
-        visual_rules: VisualRules,
+        style,
         config: Optional[GenerationConfig] = None
     ) -> GenerationResult:
         """
@@ -44,41 +43,10 @@ class ImageGenerator:
         Args:
             prompt_spec: Compiled prompt from prompt compiler
             retrieval_result: Retrieved reference images from RAG
-            visual_rules: Style constraints from style registry
             config: Optional generation config (uses defaults if not provided)
 
         Returns:
             GenerationResult containing image paths, metadata, and configuration
-
-        Example:
-            >>> from prompt.compiler import PromptCompiler
-            >>> from style.registry import StyleRegistry
-            >>> from rag.retriever import ImageRetriever
-            >>> from generate import ImageGenerator, GenerationConfig
-            >>>
-            >>> # Get style
-            >>> style = StyleRegistry().get_style("vintage-mascot")
-            >>>
-            >>> # Compile prompt
-            >>> compiler = PromptCompiler()
-            >>> prompt_spec = compiler.compile("playful golf mascot", style)
-            >>>
-            >>> # Retrieve references
-            >>> retriever = ImageRetriever()
-            >>> retrieval_result = retriever.retrieve(prompt_spec, top_k=5)
-            >>>
-            >>> # Generate images
-            >>> generator = ImageGenerator()
-            >>> config = GenerationConfig(num_images=4)
-            >>> result = generator.generate(
-            ...     prompt_spec=prompt_spec,
-            ...     retrieval_result=retrieval_result,
-            ...     visual_rules=style.visual_rules,
-            ...     config=config
-            ... )
-            >>>
-            >>> print(f"Generated {len(result.images)} sketches")
-            >>> print(f"Output: {result.timestamp}")
         """
         # Use default config if not provided
         if config is None:
@@ -88,8 +56,8 @@ class ImageGenerator:
         payload = GenerationPayload(
             prompt_spec=prompt_spec,
             retrieval_result=retrieval_result,
-            visual_rules=visual_rules,
-            config=config
+            config=config,
+            style=style
         )
 
         # Generate images via adapter
@@ -120,16 +88,15 @@ class ImageGenerator:
             # Prepare metadata dictionary
             metadata_dict = {
                 "timestamp": timestamp,
+                "user_prompt": prompt_spec.intent,
+                "gpt_compiled_prompt": prompt_spec.refined_intent,
+                "style": {
+                    "id": style.id,
+                    "name": style.name
+                },
                 "prompt_spec": prompt_spec.to_dict(),
                 "reference_images": reference_images,
                 "retrieval_scores": retrieval_result.scores,
-                "style_id": prompt_spec.style_id,
-                "visual_rules": {
-                    "line_weight": visual_rules.line_weight,
-                    "looseness": visual_rules.looseness,
-                    "complexity": visual_rules.complexity,
-                    "additional_rules": visual_rules.additional_rules
-                },
                 "config": {
                     "num_images": config.num_images,
                     "resolution": list(config.resolution),

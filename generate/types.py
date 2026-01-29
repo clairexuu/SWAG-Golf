@@ -1,9 +1,9 @@
 # generate/types.py
+import os
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Tuple
 from prompt.schema import PromptSpec
 from rag.types import RetrievalResult
-from style.types import VisualRules
 
 
 @dataclass
@@ -12,7 +12,7 @@ class GenerationConfig:
     num_images: int = 4  # Generate 3-6 sketches
     resolution: Tuple[int, int] = (1024, 1024)  # Width x Height
     output_dir: str = "generated_outputs"  # Base output directory
-    model_name: str = "nano-banana"  # Model identifier
+    model_name: str = field(default_factory=lambda: os.getenv('GEMINI_MODEL', 'gemini-2.5-flash-image'))  # Model identifier from env
     seed: Optional[int] = None  # For reproducibility
 
 
@@ -49,5 +49,5 @@ class GenerationPayload:
     """Standardized input payload for image generation"""
     prompt_spec: PromptSpec  # Compiled prompt
     retrieval_result: RetrievalResult  # RAG references
-    visual_rules: VisualRules  # Style constraints
     config: GenerationConfig  # Generation parameters
+    style: object  # Style object with name, description, visual_rules

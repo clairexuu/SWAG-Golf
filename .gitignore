@@ -1,3 +1,8 @@
 .DS_Store
-__pycache__/nano_banana.cpython-311.pyc
+__pycache__/
 node_modules/
+generated_outputs/
+cache/
+rag/reference_images
+style/style_library/
+.env
