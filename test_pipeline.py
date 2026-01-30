@@ -54,7 +54,7 @@ def main():
     # Initialize RAG components
     embedder = ImageEmbedder()
     index_registry = IndexRegistry(style_registry, embedder, cache_dir="rag/cache")
-    retriever = ImageRetriever(index_registry)
+    retriever = ImageRetriever(index_registry, embedder)
 
     # Retrieve using proper RAG system
     retrieval_result = retriever.retrieve(prompt_spec, style, top_k=5)
@@ -62,6 +62,12 @@ def main():
     print(f"✓ Retrieved {len(retrieval_result.images)} references")
     for i, (img, score) in enumerate(zip(retrieval_result.images, retrieval_result.scores), 1):
         print(f"  {i}. {Path(img.path).name} (similarity: {score:.3f})")
+
+    # Validate text-based retrieval
+    if retrieval_result.images:
+        print(f"\n✓ Text-based retrieval successful (query: '{prompt_spec.refined_intent[:50]}...')")
+        if retrieval_result.scores[0] < 0.2:
+            print(f"  Warning: Low similarity score ({retrieval_result.scores[0]:.3f}) - check prompt quality")
 
     # Step 4: Generate images with Nano Banana
     print("\n[4/4] Generating images...")

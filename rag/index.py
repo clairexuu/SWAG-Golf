@@ -11,6 +11,8 @@ class StyleImageIndex:
     """
     Manages the embedding index for a single style.
     Handles caching and lazy loading.
+
+    Embeddings must be pre-built using init_embeddings.py before retrieval.
     """
 
     def __init__(
@@ -39,23 +41,39 @@ class StyleImageIndex:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
     def get_embeddings(self) -> List[ImageEmbedding]:
-        """Get embeddings, loading from cache or building if needed"""
+        """
+        Get embeddings from cache.
+
+        Raises:
+            ValueError: If no cache exists for this style.
+                Run init_embeddings.py to build the cache first.
+        """
         if self._embeddings is None:
-            self._embeddings = self._load_or_build()
+            self._embeddings = self._load_from_cache()
         return self._embeddings
 
-    def _load_or_build(self) -> List[ImageEmbedding]:
-        """Load from cache if available, otherwise build index"""
+    def _load_from_cache(self) -> List[ImageEmbedding]:
+        """
+        Load embeddings from cache file.
+
+        Raises:
+            ValueError: If cache doesn't exist or is invalid.
+        """
         cache_path = self._get_cache_path()
 
-        if cache_path.exists():
-            try:
-                return self._load_from_cache(cache_path)
-            except Exception as e:
-                print(f"Warning: Failed to load cache for {self.style_id}: {e}")
-                print("Rebuilding index...")
+        if not cache_path.exists():
+            raise ValueError(
+                f"No embeddings cache for style '{self.style_id}'. "
+                f"Run: python -m rag.init_embeddings --style {self.style_id}"
+            )
 
-        return self.build_index()
+        try:
+            return self._parse_cache_file(cache_path)
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                f"Corrupted cache for style '{self.style_id}': {e}. "
+                f"Run: python -m rag.init_embeddings --style {self.style_id} --force"
+            )
 
     def build_index(self) -> List[ImageEmbedding]:
         """Generate embeddings for all reference images in style"""
@@ -107,8 +125,8 @@ class StyleImageIndex:
         with open(cache_path, 'w') as f:
             json.dump(cache_data, f, indent=2)
 
-    def _load_from_cache(self, cache_path: Path) -> List[ImageEmbedding]:
-        """Load embeddings from cache file"""
+    def _parse_cache_file(self, cache_path: Path) -> List[ImageEmbedding]:
+        """Parse and validate cache file contents."""
         with open(cache_path, 'r') as f:
             cache_data = json.load(f)
 
@@ -116,7 +134,8 @@ class StyleImageIndex:
         if cache_data.get("embedding_dim") != self.embedder.embedding_dim:
             raise ValueError(
                 f"Cached embedding dimension {cache_data.get('embedding_dim')} "
-                f"does not match embedder dimension {self.embedder.embedding_dim}"
+                f"does not match embedder dimension {self.embedder.embedding_dim}. "
+                f"Run: python -m rag.init_embeddings --style {self.style_id} --force"
             )
 
         embeddings = [

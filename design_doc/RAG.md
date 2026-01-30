@@ -1,126 +1,159 @@
 # Retrieval-Augmented Generation (RAG)
 
-A retrieval-augmented generation system that hard-filters the reference image database by the designer's selected style, then retrieves top-K semantically similar images using embeddings to ensure exact stylistic fidelity in generated concept sketches. This RAG system is the primary mechanism for stylistic accuracy, ensuring generated sketches reflect real Swag designer work rather than generic model aesthetics.
+A retrieval-augmented generation system that hard-filters reference images by style, then retrieves top-K semantically similar images using CLIP embeddings. Ensures generated sketches reflect real Swag designer work rather than generic model aesthetics.
 
-## Architecture
+## Retrieval Workflow
 
-The RAG module is located in `rag/` and consists of six core components:
+1. **Hard filter** by style: Only consider images from selected style
+2. **Text embedding**: Convert `prompt_spec.refined_intent` to 512-dim vector using CLIP
+3. **Semantic ranking**: Compare text embedding against all reference image embeddings
+4. **Top-K selection**: Return most similar images with similarity scores
 
-### Module Structure
+## Embedding Initialization
+
+**Embeddings must be pre-built before running retrieval.** The system will raise an error if you attempt retrieval without a cache.
+
+### Building Embeddings
+
+```bash
+# Single style
+python -m rag.init_embeddings --style default
+
+# Multiple styles
+python -m rag.init_embeddings --style default vintage-mascot
+
+# All styles
+python -m rag.init_embeddings --all
+
+# Force rebuild (overwrites existing cache)
+python -m rag.init_embeddings --style default --force
+```
+
+### When to Rebuild
+
+Run `init_embeddings.py` after:
+- Adding new images to `rag/reference_images/`
+- Modifying `style.json` to add/remove images
+- Changing the CLIP model
+
+### Error Messages
+
+If you forget to build embeddings:
+```
+ValueError: No embeddings cache for style 'default'.
+Run: python -m rag.init_embeddings --style default
+```
+
+## Style → Image → Embedding Flow
+
+### Where Data Lives
+
+| Location | Contents |
+|----------|----------|
+| `style/style_library/{style_id}/style.json` | Defines which images belong to this style |
+| `rag/reference_images/` | Actual image files (shared pool) |
+| `rag/cache/{style_id}_embeddings.json` | Pre-computed embeddings tagged with style_id |
+
+### How Style Maps to Embeddings
 
 ```
-rag/
-├── __init__.py          # Module exports
-├── types.py             # Data type definitions (dataclasses)
-├── embedder.py          # Embedding generation (currently placeholder)
-├── index.py             # Image index management with caching
-├── retriever.py         # Core retrieval orchestration
-├── utils.py             # Helper functions (cosine similarity, etc.)
-└── cache/               # JSON cache for embeddings (auto-generated)
+StyleRegistry.get_style("default")
+    │
+    ▼
+Reads style/style_library/default/style.json
+    │   {
+    │     "reference_images": ["IMG_4171.PNG", "IMG_4172.PNG", ...]
+    │   }
+    ▼
+Returns Style object with:
+    style.id = "default"
+    style.reference_images = [
+        "rag/reference_images/IMG_4171.PNG",
+        ...
+    ]
 ```
 
-### Core Components
+The style→image mapping is defined in `style.json`, not inferred from image files.
 
-#### 1. Data Types (`types.py`)
+## Components
 
-**ReferenceImage**
-- Represents a reference image in the style library
-- Fields: `path`, `style_id`, `embedding`, `metadata`
+### `ImageEmbedder` - CLIP-based embedding generation
 
-**ImageEmbedding**
-- Stores image path + embedding vector + style metadata
-- Used internally for index storage
+Generates 512-dimensional normalized vectors using CLIP ViT-B/32.
 
-**RetrievalResult**
-- Contains retrieval query results
-- Fields: `images` (list of ReferenceImage), `scores` (similarity scores), `query_context`
-- Includes `to_dict()` method for generation payload formatting
-
-**RetrievalConfig**
-- Configuration for retrieval behavior
-- Fields: `top_k` (default: 5), `min_similarity` (default: 0.0), `include_negative` (default: False)
-
-#### 2. Embedding Generation (`embedder.py`)
-
-**ImageEmbedder** - CLIP-based embedding generation
-- Generates normalized 512-dimensional vectors using CLIP ViT-B/32
-- Model configured via `CLIP_MODEL` environment variable (default: `openai/clip-vit-base-patch32`)
-- Methods:
-  - `embed_image(image_path)`: Generate embedding for single image
-  - `embed_batch(image_paths)`: Batch embedding generation (more efficient)
-- Supports GPU acceleration when available (automatically falls back to CPU)
+**Methods:**
+- `embed_image(image_path)` → embedding vector (512-dim)
+- `embed_text(text)` → embedding vector (512-dim)
+- `embed_batch(image_paths)` → list of embeddings
+- `embed_text_batch(texts)` → list of embeddings
 
 **Configuration:**
-To change the CLIP model, set `CLIP_MODEL` in your `.env` file:
 ```bash
-# Use a different CLIP variant
-CLIP_MODEL=openai/clip-vit-large-patch14
+# .env file
+CLIP_MODEL=openai/clip-vit-base-patch32  # default
 ```
 
-Supported models: Any HuggingFace CLIP model identifier compatible with the `transformers` library.
 
-#### 3. Index Management (`index.py`)
+### `StyleImageIndex` - Embedding cache for single style
 
-**StyleImageIndex**
-- Manages embeddings for a single style with lazy loading and caching
-- Loads reference images from StyleRegistry
-- Generates embeddings using ImageEmbedder
-- Persists to `rag/cache/{style_id}_embeddings.json`
-- Methods:
-  - `get_embeddings()`: Lazy load embeddings (from cache or build)
-  - `build_index()`: Generate embeddings for all style references
-  - `clear_cache()`: Remove cached embeddings
+Manages embeddings for one style with lazy loading and JSON caching.
 
-**IndexRegistry**
-- Registry pattern for accessing style-specific indices
-- Mirrors StyleRegistry design for consistency
-- Manages multiple StyleImageIndex instances with caching
-- Methods:
-  - `get_index(style_id)`: Get or create index for a style
-  - `rebuild_all()`: Rebuild all style indices
-  - `clear_cache()`: Clear all cached embeddings
+**Methods:**
+- `get_embeddings()` → list of embeddings (loads from cache, raises error if missing)
+- `build_index()` → rebuild embeddings for all reference images
+- `clear_cache()` → delete cached embeddings
 
-**Cache Format:**
-```json
-{
-  "style_id": "vintage-mascot",
-  "embedding_dim": 512,
-  "created_at": "2026-01-25T14:30:00",
-  "embeddings": [
-    {
-      "image_path": "/path/to/reference.jpg",
-      "embedding": [0.1, 0.2, ...],
-      "style_id": "vintage-mascot"
-    }
-  ]
-}
-```
+**Cache location:** `rag/cache/{style_id}_embeddings.json`
 
-#### 4. Retrieval Orchestration (`retriever.py`)
+**Note:** `get_embeddings()` requires pre-built cache. It will not auto-generate embeddings.
 
-**ImageRetriever**
-- Main orchestration class for the retrieval pipeline
-- Implements style-based hard filtering and semantic ranking
-- Methods:
-  - `retrieve(prompt_spec, style, top_k)`: Retrieve references for a PromptSpec with style object
-  - `retrieve_by_text(text, style_id, top_k)`: Direct text-based retrieval
+### `IndexRegistry` - Multi-style index manager
+
+**Methods:**
+- `get_index(style_id)` → StyleImageIndex for requested style
+- `rebuild_all()` → rebuild all style indices
+- `clear_cache()` → clear all cached embeddings
+
+### `ImageRetriever` - Main retrieval orchestrator
+
+**Constructor:**
+- `__init__(index_registry, embedder, config=None)`
+  - `config`: RetrievalConfig with `top_k`, `min_similarity`, `include_negative`
+
+**Methods:**
+- `retrieve(prompt_spec, style, top_k=None)` → RetrievalResult
+  - Uses `prompt_spec.refined_intent` for semantic search
+  - Falls back to `prompt_spec.intent` if refined_intent is empty
+  - Hard-filters by style, ranks by cosine similarity
 
 **Retrieval Flow:**
-1. Extract `style_id` from style object parameter
-2. Hard-filter: Get only that style's embeddings via IndexRegistry
-3. Compute query embedding (placeholder: uses first image as proxy)
-4. Calculate cosine similarity for all candidate images
-5. Rank by similarity score (descending)
+1. Extract style_id from style object
+2. Get style's image embeddings from index
+3. Convert `prompt_spec.refined_intent` to text embedding
+4. Compute cosine similarity between query and all images
+5. Rank by similarity (descending)
 6. Apply minimum similarity threshold
-7. Filter out images from `do_not_use` list (if configured)
-8. Select top-K results
-9. Return RetrievalResult with images, scores, and context
+7. Filter out `do_not_use` images
+8. Return top-K results
 
-#### 5. Utility Functions (`utils.py`)
+### Data Types
 
-- `cosine_similarity(vec1, vec2)`: Compute cosine similarity between vectors
-- `validate_image_path(path)`: Check if image exists with valid extension
-- `normalize_vector(vec)`: Normalize vector to unit length
+**RetrievalResult:**
+- `images` - list of ReferenceImage objects
+- `scores` - similarity scores (0.0 to 1.0)
+- `query_context` - metadata (style_id, intent, refined_intent, top_k)
+- `to_dict()` - convert to payload format
+
+**RetrievalConfig:**
+- `top_k` (default: 5) - number of images to retrieve
+- `min_similarity` (default: 0.0) - threshold for filtering
+- `include_negative` (default: False) - include do_not_use images
+
+**ReferenceImage:**
+- `path` - image file path
+- `style_id` - style identifier
+- `embedding` - 512-dim vector
+- `metadata` - additional info
 
 ## Usage
 
@@ -130,132 +163,52 @@ Supported models: Any HuggingFace CLIP model identifier compatible with the `tra
 from style.registry import StyleRegistry
 from rag import ImageEmbedder, IndexRegistry, ImageRetriever, RetrievalConfig
 
-# Initialize components (one-time setup)
+# Initialize components
 style_registry = StyleRegistry()
-embedder = ImageEmbedder()  # Placeholder for now
+embedder = ImageEmbedder()
 index_registry = IndexRegistry(style_registry, embedder)
-config = RetrievalConfig(top_k=5, min_similarity=0.3)
-retriever = ImageRetriever(index_registry, config)
+retriever = ImageRetriever(index_registry, embedder)
 ```
 
-### Retrieval from PromptSpec
+### Retrieval Example
 
 ```python
 from prompt.schema import PromptSpec
 
-# PromptSpec from prompt compilation step
+# Get compiled prompt spec (from PromptCompiler)
 prompt_spec = PromptSpec(
     intent="Cool mascot character",
-    refined_intent="Playful mascot character with bold lines",
-    negative_constraints=[]
+    refined_intent="Playful mascot character with bold lines"
 )
 
-# Get style object
+# Get style
 style = style_registry.get_style("vintage-mascot")
 
-# Retrieve top-5 reference images
+# Retrieve top-5 similar images
 result = retriever.retrieve(prompt_spec, style, top_k=5)
 
 # Access results
-print(f"Retrieved {len(result.images)} images")
 for img, score in zip(result.images, result.scores):
-    print(f"  {img.path}: similarity={score:.3f}")
-
-# Convert to generation payload format
-generation_payload = {
-    "prompt": prompt_spec.to_dict(),
-    "reference_images": result.to_dict()
-}
-```
-
-### Direct Text-based Retrieval
-
-```python
-# Retrieve by text query and style ID
-result = retriever.retrieve_by_text(
-    text="Bold mascot character with thick lines",
-    style_id="vintage-mascot",
-    top_k=5
-)
+    print(f"{img.path}: {score:.3f}")
 ```
 
 ### Cache Management
 
-```python
-# Rebuild index for a specific style
-index = index_registry.get_index("vintage-mascot")
-index.build_index()
-
-# Clear cache for a style
-index.clear_cache()
-
-# Rebuild all style indices
-index_registry.rebuild_all()
-
-# Clear all caches
-index_registry.clear_cache()
+```bash
+# Recommended: Use the CLI script
+python -m rag.init_embeddings --style vintage-mascot --force
 ```
 
-## Integration with Pipeline
-
-The RAG module integrates seamlessly into the pipeline workflow:
-
 ```python
-# In pipeline.py
-from style.registry import StyleRegistry
-from prompt.compiler import PromptCompiler
-from rag import ImageEmbedder, IndexRegistry, ImageRetriever
-
-# Setup
-style_registry = StyleRegistry()
-prompt_compiler = PromptCompiler()
-embedder = ImageEmbedder()
-index_registry = IndexRegistry(style_registry, embedder)
-retriever = ImageRetriever(index_registry)xs
-
-# Pipeline execution
-def generate_sketch(user_input: str, style_id: str):
-    # 1. Get style
-    style = style_registry.get_style(style_id)
-
-    # 2. Compile prompt
-    prompt_spec = prompt_compiler.compile(user_input, style)
-
-    # 3. Retrieve reference images
-    retrieval_result = retriever.retrieve(prompt_spec, style, top_k=5)
-
-    # 4. Build generation payload
-    payload = {
-        "prompt": prompt_spec.to_dict(),
-        "references": retrieval_result.to_dict()
-    }
-
-    # 5. Send to image generation (Nano Banana)
-    # generated_image = image_generator.generate(payload)
-
-    return retrieval_result
+# Or programmatically (for advanced use)
+index = index_registry.get_index("vintage-mascot")
+index.build_index()  # Rebuilds and saves to cache
+index.clear_cache()  # Deletes cache file
 ```
 
 ## Future Enhancements
 
-**1. Real Embedding Models**
-Replace `ImageEmbedder` with production models:
-- CLIP (OpenAI) - multimodal vision-language model
-- OpenAI Embeddings API
-- Custom fine-tuned vision models
-
-**2. Vector Databases**
-For scale beyond MVP (1000+ images):
-- FAISS for efficient approximate nearest neighbor (ANN)
-- Pinecone, Weaviate, or Milvus for production scale
-- Sub-millisecond search times
-
-**3. Negative Example Learning**
-Leverage `do_not_use` images:
-- Contrastive learning to push away from negative examples
-- Improve relevance by learning what NOT to retrieve
-
-**4. Relevance Feedback**
-- Learn from designer selections and rejections
-- Adjust ranking based on which references get used
-- Personalized retrieval over time
+- **Vector databases:** FAISS/Pinecone for 1000+ images
+- **Fine-tuning:** Domain-adapt CLIP on golf apparel designs
+- **Relevance feedback:** Learn from designer selections
+- **Negative learning:** Use `do_not_use` images for contrastive training

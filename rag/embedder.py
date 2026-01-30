@@ -8,10 +8,11 @@ from .utils import normalize_vector
 
 class ImageEmbedder:
     """
-    Generates embeddings for reference images using CLIP.
+    Generates embeddings for images and text using CLIP.
 
-    Uses OpenAI's CLIP model to generate semantic embeddings for images.
-    Embeddings are 512-dimensional vectors (for ViT-B/32).
+    Uses OpenAI's CLIP model to generate semantic embeddings for both images
+    and text queries. Embeddings are 512-dimensional vectors (for ViT-B/32)
+    in a shared multimodal space, enabling text-image similarity comparison.
     """
 
     def __init__(self, model_name: Optional[str] = None, embedding_dim: int = 512):
@@ -76,6 +77,95 @@ class ImageEmbedder:
         # Extract first (only) embedding and convert to Python list
         embedding = image_features[0].cpu().numpy().tolist()
         return normalize_vector(embedding)
+
+    def embed_text(self, text: str) -> List[float]:
+        """
+        Generate CLIP embedding for text query.
+
+        Args:
+            text: Text string to embed (e.g., design description)
+
+        Returns:
+            Normalized embedding vector (512-dimensional for ViT-B/32)
+
+        Raises:
+            ValueError: If text is empty or None
+        """
+        # Validate input
+        if not text or not text.strip():
+            raise ValueError("Text input cannot be empty")
+
+        # Tokenize text
+        inputs = self.processor(
+            text=text,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=77  # CLIP's max token length
+        )
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+
+        # Generate embedding
+        with torch.no_grad():
+            outputs = self.model.get_text_features(**inputs)
+
+        # Handle different transformers versions (same as image embedding)
+        if isinstance(outputs, torch.Tensor):
+            text_features = outputs
+        else:
+            # BaseModelOutputWithPooling - get pooler_output
+            text_features = outputs.pooler_output
+
+        # Convert to list and normalize
+        # text_features shape: (batch_size, hidden_size) = (1, 512)
+        embedding = text_features[0].cpu().numpy().tolist()
+        return normalize_vector(embedding)
+
+    def embed_text_batch(self, texts: List[str]) -> List[List[float]]:
+        """
+        Generate embeddings for multiple text strings efficiently.
+
+        Args:
+            texts: List of text strings to embed
+
+        Returns:
+            List of normalized embedding vectors
+
+        Raises:
+            ValueError: If texts list is empty or contains only empty strings
+        """
+        # Validate input
+        if not texts:
+            raise ValueError("Texts list cannot be empty")
+
+        valid_texts = [t.strip() for t in texts if t and t.strip()]
+        if not valid_texts:
+            raise ValueError("All text strings are empty")
+
+        # Batch tokenization
+        inputs = self.processor(
+            text=valid_texts,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=77
+        )
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+
+        # Generate embeddings
+        with torch.no_grad():
+            outputs = self.model.get_text_features(**inputs)
+
+        # Handle different transformers versions
+        if isinstance(outputs, torch.Tensor):
+            text_features = outputs
+        else:
+            # BaseModelOutputWithPooling - get pooler_output
+            text_features = outputs.pooler_output
+
+        # Convert to lists and normalize
+        embeddings = text_features.cpu().numpy().tolist()
+        return [normalize_vector(emb) for emb in embeddings]
 
     def embed_batch(self, image_paths: List[str]) -> List[List[float]]:
         """

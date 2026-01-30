@@ -2,6 +2,7 @@ from typing import List, Optional
 
 from .types import ReferenceImage, RetrievalResult, RetrievalConfig
 from .index import IndexRegistry
+from .embedder import ImageEmbedder
 from .utils import cosine_similarity
 
 
@@ -13,6 +14,7 @@ class ImageRetriever:
     def __init__(
         self,
         index_registry: IndexRegistry,
+        embedder: ImageEmbedder,
         config: Optional[RetrievalConfig] = None
     ):
         """
@@ -20,9 +22,11 @@ class ImageRetriever:
 
         Args:
             index_registry: IndexRegistry for accessing style-specific embeddings
+            embedder: ImageEmbedder instance for generating query embeddings
             config: Configuration for retrieval behavior
         """
         self.index_registry = index_registry
+        self.embedder = embedder
         self.config = config or RetrievalConfig()
 
     def retrieve(self, prompt_spec, style, top_k: Optional[int] = None) -> RetrievalResult:
@@ -62,11 +66,15 @@ class ImageRetriever:
                 }
             )
 
-        # TODO: Compute query embedding from prompt_spec
-        # For now, use the first image's embedding as a proxy query
-        # In the future, this should use text→embedding or multi-modal embedding
-        # query_embedding = embed_text(prompt_spec.refined_intent)
-        query_embedding = embeddings[0].embedding
+        # Generate query embedding from text description
+        # Use refined_intent (GPT-normalized), fallback to intent if empty
+        query_text = prompt_spec.refined_intent
+        if not query_text or not query_text.strip():
+            print(f"Warning: refined_intent is empty in prompt_spec, using original intent")
+            query_text = prompt_spec.intent
+
+        # Embed the query text using CLIP's text encoder
+        query_embedding = self.embedder.embed_text(query_text)
 
         # Compute similarities
         scores = [
