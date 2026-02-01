@@ -2,6 +2,9 @@
 
 import type { Sketch } from '../../types';
 
+const API_BASE_URL = 'http://localhost:3001/api';
+const getImageUrl = (imagePath: string) => `${API_BASE_URL}${imagePath}`;
+
 interface SketchGridProps {
   sketches: Sketch[];
   isGenerating: boolean;
@@ -9,9 +12,22 @@ interface SketchGridProps {
 }
 
 export default function SketchGrid({ sketches, isGenerating, error }: SketchGridProps) {
-  const handleDownload = (sketchId: string) => {
-    console.log(`[MVP] Download sketch: ${sketchId}`);
-    // TODO: Implement actual download functionality
+  const handleDownload = async (sketch: Sketch) => {
+    const imageUrl = getImageUrl(sketch.imagePath);
+    try {
+      const response = await fetch(imageUrl);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `sketch-${sketch.id}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Download failed:', error);
+    }
   };
 
   const handleRegenerate = (sketchId: string) => {
@@ -104,32 +120,19 @@ export default function SketchGrid({ sketches, isGenerating, error }: SketchGrid
       <div className="flex-1 grid grid-cols-2 gap-4 overflow-y-auto">
         {sketches.map((sketch) => (
           <div key={sketch.id} className="flex flex-col bg-white border-2 border-gray-200 rounded-lg overflow-hidden">
-            {/* Placeholder image */}
-            <div className="aspect-square bg-gray-200 flex items-center justify-center relative group">
-              <div className="text-center">
-                <svg
-                  className="w-12 h-12 text-gray-400 mx-auto mb-2"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-                  />
-                </svg>
-                <span className="text-gray-500 text-sm">
-                  {sketch.resolution[0]} × {sketch.resolution[1]}
-                </span>
-              </div>
+            {/* Generated image */}
+            <div className="flex-1 min-h-[200px] bg-gray-100 flex items-center justify-center p-2">
+              <img
+                src={getImageUrl(sketch.imagePath)}
+                alt={`Sketch ${sketch.id}`}
+                className="max-w-full max-h-full object-contain"
+              />
             </div>
 
             {/* Quick actions */}
             <div className="p-3 border-t border-gray-200 flex gap-2">
               <button
-                onClick={() => handleDownload(sketch.id)}
+                onClick={() => handleDownload(sketch)}
                 className="flex-1 px-3 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
                 title="Download sketch"
               >

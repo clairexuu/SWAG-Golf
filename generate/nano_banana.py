@@ -116,6 +116,8 @@ class NanaBananaAdapter(ImageModelAdapter):
                     reference_images=reference_images,
                     num_images=config.num_images,
                     resolution=config.resolution,
+                    aspect_ratio=config.aspect_ratio,
+                    image_size=config.image_size,
                     seed=config.seed
                 )
 

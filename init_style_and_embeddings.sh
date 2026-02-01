@@ -9,10 +9,10 @@
 # Configuration - Edit these values
 # ============================================
 
-STYLE_ID="my-style"
-STYLE_NAME="My Style"
-STYLE_DESCRIPTION="Description of the style"
-IMAGES_FOLDER="/path/to/images"
+STYLE_ID="general"
+STYLE_NAME="General Style"
+STYLE_DESCRIPTION="The General Style for all designs from SWAG Golf"
+IMAGES_FOLDER="Images-Eric/"
 
 # Mode: "create" for new style, "add-images" to add to existing style
 MODE="create"
@@ -29,7 +29,7 @@ set -e  # Exit on error
 
 # Get script directory and project root
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$SCRIPT_DIR"
 
 cd "$PROJECT_ROOT"
 

@@ -81,14 +81,6 @@ export default function StyleSelector({
               <div className="flex-1">
                 <h3 className="font-semibold text-gray-900">{style.name}</h3>
                 <p className="text-sm text-gray-600 mt-1">{style.description}</p>
-                <div className="flex gap-2 mt-2 text-xs text-gray-500">
-                  <span className="bg-gray-100 px-2 py-1 rounded">
-                    {style.visualRules.lineWeight}
-                  </span>
-                  <span className="bg-gray-100 px-2 py-1 rounded">
-                    {style.visualRules.complexity}
-                  </span>
-                </div>
               </div>
             </div>
           </div>

@@ -50,26 +50,7 @@ class ImageModelAdapter(ABC):
             Formatted prompt string for image generation
         """
         # Build comprehensive prompt from PromptSpec
-        prompt_parts = [prompt_spec.refined_intent]
-
-        # Add subject matter if specified
-        if prompt_spec.subject_matter:
-            prompt_parts.append(f"Subject: {prompt_spec.subject_matter}")
-
-        # Add mood if specified
-        if prompt_spec.mood:
-            prompt_parts.append(f"Mood: {prompt_spec.mood}")
-
-        # Add composition notes if specified
-        if prompt_spec.composition_notes:
-            prompt_parts.append(f"Composition: {prompt_spec.composition_notes}")
-
-        # Add perspective if specified
-        if prompt_spec.perspective:
-            prompt_parts.append(f"Perspective: {prompt_spec.perspective}")
-
-        # Join main parts
-        prompt = ", ".join(prompt_parts)
+        prompt = prompt_spec.refined_intent
 
         # Add style information
         prompt += f"\n\n**Style: {style.name}**\n{style.description}"

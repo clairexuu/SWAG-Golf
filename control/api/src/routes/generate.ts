@@ -2,7 +2,8 @@
 
 import { Router } from 'express';
 import { MockGenerationService } from '../services/mock-service.js';
-import type { GenerateRequest } from '../../../shared/schema/api-contracts.js';
+import { fetchFromPython, checkPythonHealth } from '../services/python-client.js';
+import type { GenerateRequest, GenerateResponse } from '../../../shared/schema/api-contracts.js';
 
 const router = Router();
 const mockService = new MockGenerationService();
@@ -33,7 +34,23 @@ router.post('/generate', async (req, res) => {
       });
     }
 
-    // Generate sketches (mock for MVP)
+    // Try Python backend first
+    const pythonHealthy = await checkPythonHealth();
+
+    if (pythonHealthy) {
+      try {
+        const response = await fetchFromPython<GenerateResponse>('/generate', {
+          method: 'POST',
+          body: JSON.stringify({ input, styleId, numImages: numImages || 4, experimentalMode })
+        });
+        return res.json(response);
+      } catch (pythonError) {
+        console.error('Python backend error, falling back to mock:', pythonError);
+      }
+    }
+
+    // Fallback to mock service
+    console.log('Using mock generation service');
     const result = await mockService.generate({
       input,
       styleId,

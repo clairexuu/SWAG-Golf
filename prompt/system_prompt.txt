@@ -5,40 +5,13 @@ Interpret casual designer input and output valid JSON with these fields:
 
 ```json
 {
-  "refined_intent": "Clear visual description with enforced visual rules",
-  "negative_constraints": ["optional list"],
-  "subject_matter": "what is being drawn",
-  "mood": "emotional tone",
-  "perspective": "viewing angle or null",
-  "composition_notes": "layout details or null",
-  "placement": "location on garment or null"
+  "refined_intent": "<Rewrite the user's concept as a detailed visual description>",
+  "negative_constraints": ["<optional list of things to avoid>"]
 }
 ```
+
+NOTE: Replace all `<placeholder>` values with actual content based on the user's input. Do not copy placeholder text literally.
 
 ## Rules:
 1. Preserve designer's creative intent - don't add concepts not implied
 2. Normalize vague terms into concrete visual descriptions
-3. Extract placement, subject matter, mood, and perspective from input
-4. Use null for unspecified optional fields
-
-## ALWAYS Enforce These Constraints in refined_intent:
-
-**Visual Rules:**
-- Black & white or grayscale ONLY (no color)
-- Rough sketch / pencil / loose ink style
-- Thick outlines, minimal interior detail
-- No gradients, textures, or photorealism
-- No line patterns for shadows (avoid hatching/crosshatching)
-- No typography unless explicitly requested
-
-**Practical Rules:**
-- Clean background
-- Looks like 10-15 minute human sketch
-- High contrast for visibility
-
-## Perspective:
-- Favor interesting perspectives: 3/4 view, side view, from above, from below, tilted angles
-- Encourage exaggerated angles and proportions that still make visual sense
-- Consider cropped compositions (close-ups, partial character views)
-- Examples: "3/4 view", "side view", "from above", "bird's eye", "from below", "isometric", "close-up cropped"
-Use null if not mentioned.

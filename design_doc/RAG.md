@@ -1,11 +1,11 @@
 # Retrieval-Augmented Generation (RAG)
 
-A retrieval-augmented generation system that hard-filters reference images by style, then retrieves top-K semantically similar images using CLIP embeddings. Ensures generated sketches reflect real Swag designer work rather than generic model aesthetics.
+A retrieval-augmented generation system that hard-filters reference images by style, then retrieves top-K semantically similar images using vision-language model embeddings. Ensures generated sketches reflect real Swag designer work rather than generic model aesthetics.
 
 ## Retrieval Workflow
 
 1. **Hard filter** by style: Only consider images from selected style
-2. **Text embedding**: Convert `prompt_spec.refined_intent` to 512-dim vector using CLIP
+2. **Text embedding**: Convert `prompt_spec.refined_intent` to vector using the embedding model
 3. **Semantic ranking**: Compare text embedding against all reference image embeddings
 4. **Top-K selection**: Return most similar images with similarity scores
 
@@ -34,7 +34,7 @@ python -m rag.init_embeddings --style default --force
 Run `init_embeddings.py` after:
 - Adding new images to `rag/reference_images/`
 - Modifying `style.json` to add/remove images
-- Changing the CLIP model
+- Changing the embedding model (CLIP_MODEL in .env)
 
 ### Error Messages
 
@@ -77,20 +77,21 @@ The style→image mapping is defined in `style.json`, not inferred from image fi
 
 ## Components
 
-### `ImageEmbedder` - CLIP-based embedding generation
+### `ImageEmbedder` - Vision-language embedding generation
 
-Generates 512-dimensional normalized vectors using CLIP ViT-B/32.
+Generates normalized embedding vectors using CLIP or SigLIP models. Dimension varies by model (e.g., 512 for CLIP ViT-B/32, 768 for SigLIP base).
 
 **Methods:**
-- `embed_image(image_path)` → embedding vector (512-dim)
-- `embed_text(text)` → embedding vector (512-dim)
+- `embed_image(image_path)` → embedding vector
+- `embed_text(text)` → embedding vector
 - `embed_batch(image_paths)` → list of embeddings
 - `embed_text_batch(texts)` → list of embeddings
 
 **Configuration:**
 ```bash
 # .env file
-CLIP_MODEL=openai/clip-vit-base-patch32  # default
+CLIP_MODEL=google/siglip-base-patch16-224  # current default
+# Other options: openai/clip-vit-base-patch32, laion/CLIP-ViT-bigG-14-laion2B-39B-b160k
 ```
 
 
@@ -152,7 +153,7 @@ Manages embeddings for one style with lazy loading and JSON caching.
 **ReferenceImage:**
 - `path` - image file path
 - `style_id` - style identifier
-- `embedding` - 512-dim vector
+- `embedding` - embedding vector (dimension depends on model)
 - `metadata` - additional info
 
 ## Usage
@@ -209,6 +210,6 @@ index.clear_cache()  # Deletes cache file
 ## Future Enhancements
 
 - **Vector databases:** FAISS/Pinecone for 1000+ images
-- **Fine-tuning:** Domain-adapt CLIP on golf apparel designs
+- **Fine-tuning:** Domain-adapt embedding model on golf apparel designs
 - **Relevance feedback:** Learn from designer selections
 - **Negative learning:** Use `do_not_use` images for contrastive training

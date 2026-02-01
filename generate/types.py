@@ -10,10 +10,12 @@ from rag.types import RetrievalResult
 class GenerationConfig:
     """Configuration for image generation"""
     num_images: int = 4  # Generate 3-6 sketches
-    resolution: Tuple[int, int] = (1024, 1024)  # Width x Height
+    resolution: Tuple[int, int] = (1050, 1875)  # Width x Height (used for placeholders)
     output_dir: str = "generated_outputs"  # Base output directory
     model_name: str = field(default_factory=lambda: os.getenv('GEMINI_MODEL', 'gemini-2.5-flash-image'))  # Model identifier from env
     seed: Optional[int] = None  # For reproducibility
+    aspect_ratio: str = "9:16"  # Gemini aspect ratio preset (9:16 for portrait ~1050x1875)
+    image_size: str = "2K"  # Gemini image size preset ("1K", "2K", "4K")
 
 
 @dataclass
@@ -39,7 +41,9 @@ class GenerationResult:
                 "resolution": list(self.config.resolution),
                 "output_dir": self.config.output_dir,
                 "model_name": self.config.model_name,
-                "seed": self.config.seed
+                "seed": self.config.seed,
+                "aspect_ratio": self.config.aspect_ratio,
+                "image_size": self.config.image_size
             }
         }
 

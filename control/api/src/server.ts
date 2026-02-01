@@ -2,8 +2,14 @@
 
 import express from 'express';
 import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import generateRouter from './routes/generate.js';
 import stylesRouter from './routes/styles.js';
+import { checkPythonHealth } from './services/python-client.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = 3001;
@@ -12,19 +18,25 @@ const PORT = 3001;
 app.use(cors());
 app.use(express.json());
 
+// Serve generated images from Python's output directory
+// Path: /api/generated/* -> ../../../generated_outputs/*
+const generatedImagesPath = path.resolve(__dirname, '../../../generated_outputs');
+app.use('/api/generated', express.static(generatedImagesPath));
+
 // Request logging
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
   next();
 });
 
-// Health check
-app.get('/api/health', (req, res) => {
+// Health check with Python backend status
+app.get('/api/health', async (req, res) => {
+  const pythonConnected = await checkPythonHealth();
   res.json({
     status: 'ok',
-    pythonBackend: 'disconnected', // Will be 'connected' when Python integration is added
+    pythonBackend: pythonConnected ? 'connected' : 'disconnected',
     version: '1.0.0',
-    mode: 'mock'
+    mode: pythonConnected ? 'production' : 'mock'
   });
 });
 
@@ -56,16 +68,18 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
 });
 
 // Start server
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
+  const pythonConnected = await checkPythonHealth();
   console.log('='.repeat(60));
   console.log('SWAG Concept Sketch Agent - API Server');
   console.log('='.repeat(60));
   console.log(`Server running on http://localhost:${PORT}`);
-  console.log(`Mode: MOCK (Python backend not integrated)`);
+  console.log(`Python backend: ${pythonConnected ? 'CONNECTED (http://localhost:8000)' : 'DISCONNECTED (using mock)'}`);
   console.log('');
   console.log('Available endpoints:');
   console.log(`  GET  http://localhost:${PORT}/api/health`);
   console.log(`  GET  http://localhost:${PORT}/api/styles`);
   console.log(`  POST http://localhost:${PORT}/api/generate`);
+  console.log(`  GET  http://localhost:${PORT}/api/generated/* (static images)`);
   console.log('='.repeat(60));
 });

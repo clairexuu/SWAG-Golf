@@ -17,10 +17,13 @@ export class MockGenerationService {
       intent: request.input,
       refinedIntent: `Mock refined: ${request.input}`,
       negativeConstraints: [],
-      placement: 'center',
-      subjectMatter: 'concept sketch',
-      mood: 'professional',
-      perspective: '3/4 view'
+      enforcedConstraints: [
+        'Black & white or grayscale ONLY',
+        'Rough sketch / pencil / loose ink style',
+        'Thick outlines, minimal interior detail',
+        'Clean background',
+        'High contrast for visibility'
+      ]
     };
 
     // Generate mock sketches

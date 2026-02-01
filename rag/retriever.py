@@ -73,7 +73,7 @@ class ImageRetriever:
             print(f"Warning: refined_intent is empty in prompt_spec, using original intent")
             query_text = prompt_spec.intent
 
-        # Embed the query text using CLIP's text encoder
+        # Embed the query text using the model's text encoder
         query_embedding = self.embedder.embed_text(query_text)
 
         # Compute similarities

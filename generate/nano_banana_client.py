@@ -10,6 +10,27 @@ from google.genai import types
 from PIL import Image
 
 
+SYSTEM_PROMPT = """You are a sketch assistant for a senior designer in fashion. You will design the patterns on commercial products. 
+
+The following rules always need to be followed
+
+**Visual Rules:**
+- Black & white or grayscale ONLY (no color)
+- Rough sketch / pencil / loose ink style
+- Thick outlines, minimal interior detail
+- No gradients, textures, or photorealism
+- No line patterns for shadows (avoid hatching/crosshatching)
+- No typography unless explicitly requested
+- Exaggerated perspective angles and proportions
+- Can use cropped compositions (close-ups, partial character views)
+
+**Practical Rules:**
+- Clean background
+- Looks like 10-15 minute human sketch
+- High contrast for visibility
+"""
+
+
 class NanaBananaClient:
     """Client for Google Gemini image generation (gemini-2.5-flash-image)."""
 
@@ -35,7 +56,9 @@ class NanaBananaClient:
         prompt: str,
         reference_images: List[str],
         num_images: int = 4,
-        resolution: tuple = (1024, 1024),
+        resolution: tuple = (1050, 1875),
+        aspect_ratio: str = "9:16",
+        image_size: str = "2K",
         seed: Optional[int] = None
     ) -> List[bytes]:
         """
@@ -45,7 +68,9 @@ class NanaBananaClient:
             prompt: Text prompt for generation
             reference_images: List of reference image paths
             num_images: Number of images to generate
-            resolution: (width, height) tuple (note: Gemini may not respect exact dimensions)
+            resolution: (width, height) tuple (used for placeholder images)
+            aspect_ratio: Gemini aspect ratio preset ("1:1", "9:16", "16:9", etc.)
+            image_size: Gemini image size preset ("1K", "2K", "4K")
             seed: Random seed for reproducibility (note: Gemini doesn't support seeds directly)
 
         Returns:
@@ -70,9 +95,9 @@ class NanaBananaClient:
 {prompt}
 
 IMPORTANT OUTPUT REQUIREMENTS:
-- Follow all visual rules specified above
-- Generate exactly {num_images} variations with slight differences in layout and exaggeration
-- Match the style and technique shown in the reference images below
+- Generate exactly 1 single design image (not multiple designs in one image)
+- Match the layout, style, and technique shown in the reference images below
+- Do NOT include any text, words, letters, or numbers in the generated image
 """
 
         # Generate images one at a time (Gemini generates one image per call)
@@ -83,10 +108,17 @@ IMPORTANT OUTPUT REQUIREMENTS:
                 # Prepare content with prompt and reference images
                 contents = [enhanced_prompt] + ref_parts
 
-                # Generate image
+                # Generate image with image output modality and size config
                 response = self.client.models.generate_content(
                     model=self.model_name,
-                    contents=contents
+                    contents=contents,
+                    config=types.GenerateContentConfig(
+                        systemInstruction=SYSTEM_PROMPT,
+                        responseModalities=["IMAGE", "TEXT"],
+                        imageConfig=types.ImageConfig(
+                            aspectRatio=aspect_ratio
+                        )
+                    )
                 )
 
                 # Extract image from response
@@ -94,6 +126,9 @@ IMPORTANT OUTPUT REQUIREMENTS:
                     candidate = response.candidates[0]
                     if hasattr(candidate, 'content') and candidate.content.parts:
                         for part in candidate.content.parts:
+                            # Debug: show what's in the part
+                            if os.getenv("DEBUG_GEMINI"):
+                                print(f"  Debug: Part type={type(part).__name__}, attrs={[a for a in dir(part) if not a.startswith('_')]}")
                             # Check if part contains inline image data
                             if hasattr(part, 'inline_data') and part.inline_data:
                                 img_data = part.inline_data.data
@@ -106,12 +141,14 @@ IMPORTANT OUTPUT REQUIREMENTS:
                                     # If it's already bytes (standard for genai library), use directly
                                     img_bytes = img_data
 
-                                # Validate PNG format (PNG magic number: 0x89504E47)
-                                if img_bytes and isinstance(img_bytes, bytes) and img_bytes.startswith(b'\x89PNG'):
-                                    generated_images.append(img_bytes)
-                                    break
-                                else:
-                                    print(f"Warning: Invalid image format in response for iteration {i+1}")
+                                # Validate image format (PNG or JPEG)
+                                # PNG magic: 0x89504E47, JPEG magic: 0xFFD8FF
+                                if img_bytes and isinstance(img_bytes, bytes):
+                                    if img_bytes.startswith(b'\x89PNG') or img_bytes.startswith(b'\xff\xd8\xff'):
+                                        generated_images.append(img_bytes)
+                                        break
+                                    else:
+                                        print(f"Warning: Invalid image format in response for iteration {i+1} (magic: {img_bytes[:4].hex() if len(img_bytes) >= 4 else 'too short'})")
                         else:
                             # No inline data found, create placeholder
                             print(f"Warning: No image data in response for iteration {i+1}, creating placeholder")

@@ -1,19 +1,23 @@
 #!/usr/bin/env python3
 """
-Initialize CLIP embeddings for RAG reference images.
+Initialize image embeddings for RAG reference images.
 
-Run this script after adding images to a style or modifying style.json.
+Run this script after adding images to a style, modifying style.json,
+or changing the embedding model (CLIP_MODEL in .env).
 Embeddings must be pre-built before running retrieval.
 
 Usage:
-    python -m rag.init_embeddings --style default           # Single style
-    python -m rag.init_embeddings --style default vintage   # Multiple styles
+    python -m rag.init_embeddings --style general           # Single style
+    python -m rag.init_embeddings --style general vintage   # Multiple styles
     python -m rag.init_embeddings --all                     # All styles
-    python -m rag.init_embeddings --style default --force   # Force rebuild
+    python -m rag.init_embeddings --style general --force   # Force rebuild
 """
 import argparse
 import sys
 from pathlib import Path
+
+from dotenv import load_dotenv
+load_dotenv()
 
 from style.registry import StyleRegistry
 from .embedder import ImageEmbedder
@@ -60,7 +64,7 @@ def build_style_embeddings(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Initialize CLIP embeddings for RAG reference images."
+        description="Initialize image embeddings for RAG reference images."
     )
     parser.add_argument(
         "--style",

@@ -30,7 +30,7 @@ def main():
     from style.registry import StyleRegistry
 
     style_registry = StyleRegistry()
-    style = style_registry.get_style("default")
+    style = style_registry.get_style("general")
     print(f"✓ Loaded style: {style.name}")
 
     # Step 2: Compile prompt with GPT
@@ -39,7 +39,7 @@ def main():
 
     gpt_model = os.getenv("GPT_MODEL", "gpt-4o")
     compiler = PromptCompiler(model=gpt_model)
-    user_input = "swag, cool, cartooned bull with a baseball bat and sunglasses, walking confidently"
+    user_input = "anime style baseball player, overlooking los angeles, with a burst of energy coming from behind him."
 
     # Compile with style object
     prompt_spec = compiler.compile(user_input, style)
@@ -66,8 +66,6 @@ def main():
     # Validate text-based retrieval
     if retrieval_result.images:
         print(f"\n✓ Text-based retrieval successful (query: '{prompt_spec.refined_intent[:50]}...')")
-        if retrieval_result.scores[0] < 0.2:
-            print(f"  Warning: Low similarity score ({retrieval_result.scores[0]:.3f}) - check prompt quality")
 
     # Step 4: Generate images with Nano Banana
     print("\n[4/4] Generating images...")

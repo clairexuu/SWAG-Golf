@@ -81,12 +81,7 @@ class PromptCompiler:
         return PromptSpec(
             intent=user_text,
             refined_intent=result.get("refined_intent", user_text),
-            negative_constraints=result.get("negative_constraints", []),
-            placement=result.get("placement"),
-            subject_matter=result.get("subject_matter"),
-            mood=result.get("mood"),
-            perspective=result.get("perspective"),
-            composition_notes=result.get("composition_notes")
+            negative_constraints=result.get("negative_constraints", [])
         )
 
     def _build_compilation_request(self, user_text: str, style_context: dict) -> str:

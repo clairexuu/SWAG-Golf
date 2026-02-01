@@ -2,10 +2,11 @@
 
 import { Router } from 'express';
 import type { Style } from '../../../shared/schema/style.js';
+import { fetchFromPython, checkPythonHealth } from '../services/python-client.js';
 
 const router = Router();
 
-// Mock styles for MVP
+// Fallback mock styles (used when Python backend is unavailable)
 const mockStyles: Style[] = [
   {
     id: 'vintage-mascot',
@@ -89,11 +90,30 @@ const mockStyles: Style[] = [
   }
 ];
 
-router.get('/styles', (req, res) => {
-  res.json({
-    success: true,
-    styles: mockStyles
-  });
+router.get('/styles', async (req, res) => {
+  try {
+    // Try Python backend first
+    const pythonHealthy = await checkPythonHealth();
+
+    if (pythonHealthy) {
+      const response = await fetchFromPython<{ success: boolean; styles: Style[] }>('/styles');
+      return res.json(response);
+    }
+
+    // Fallback to mock styles if Python unavailable
+    console.log('Python backend unavailable, using mock styles');
+    res.json({
+      success: true,
+      styles: mockStyles
+    });
+  } catch (error) {
+    console.error('Error fetching styles:', error);
+    // Fallback to mock styles on error
+    res.json({
+      success: true,
+      styles: mockStyles
+    });
+  }
 });
 
 export default router;

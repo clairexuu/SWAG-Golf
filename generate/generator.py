@@ -101,7 +101,9 @@ class ImageGenerator:
                     "num_images": config.num_images,
                     "resolution": list(config.resolution),
                     "model_name": config.model_name,
-                    "seed": config.seed
+                    "seed": config.seed,
+                    "aspect_ratio": config.aspect_ratio,
+                    "image_size": config.image_size
                 },
                 "images": [os.path.basename(p) for p in image_paths]  # Just filenames
             }

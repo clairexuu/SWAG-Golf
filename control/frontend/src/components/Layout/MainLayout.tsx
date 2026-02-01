@@ -32,8 +32,8 @@ export default function MainLayout() {
         <p className="text-sm text-gray-500 mt-1">AI-powered design assistant for concept sketching</p>
       </header>
 
-      {/* Main three-panel layout */}
-      <main className="flex-1 grid grid-cols-[20%_40%_40%] gap-4 p-4 overflow-hidden">
+      {/* Main three-panel layout: 1/4 style, 1/4 input, 1/2 generated images */}
+      <main className="flex-1 grid grid-cols-[25%_25%_50%] gap-4 p-4 overflow-hidden">
         {/* Left Panel */}
         <aside className="bg-white rounded-lg shadow-sm p-6 overflow-hidden flex flex-col">
           <StyleSelector
