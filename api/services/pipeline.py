@@ -1,11 +1,18 @@
 """Pipeline service that orchestrates the generation workflow."""
 
+import json
 import os
-from typing import List, Tuple
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 from dotenv import load_dotenv
 
 from style.registry import StyleRegistry
 from style.types import Style
+from style.init_style import delete_style as fs_delete_style
+from style.init_style import add_images_to_existing_style
+from style.init_style import create_new_style, slugify, DEFAULT_VISUAL_RULES
+from style.init_style import update_style_json
 from prompt.compiler import PromptCompiler
 from prompt.schema import PromptSpec
 from rag.embedder import ImageEmbedder
@@ -14,6 +21,8 @@ from rag.retriever import ImageRetriever
 from rag.types import RetrievalResult
 from generate.generator import ImageGenerator
 from generate.types import GenerationConfig, GenerationResult
+from feedback.session import SessionStore, ConversationTurn
+from feedback.logger import ConversationLogger
 
 
 class PipelineService:
@@ -56,6 +65,10 @@ class PipelineService:
         # Initialize image generator
         self.generator = ImageGenerator()
 
+        # Initialize session and feedback logging
+        self.session_store = SessionStore()
+        self.conversation_logger = ConversationLogger()
+
         self._initialized = True
 
     def get_all_styles(self) -> List[Style]:
@@ -68,11 +81,105 @@ class PipelineService:
         self._initialize()
         return self.style_registry.get_style(style_id)
 
+    def create_style(
+        self,
+        name: str,
+        description: str,
+        visual_rules: Dict[str, Any],
+        image_files: List[Path] | None = None,
+    ) -> Style:
+        """
+        Create a new style and optionally build embeddings for its images.
+
+        Returns:
+            The created Style object
+        """
+        self._initialize()
+
+        style_id = slugify(name)
+
+        # Merge provided rules with defaults
+        merged_rules = {**DEFAULT_VISUAL_RULES, **visual_rules}
+        if "additional_rules" not in merged_rules:
+            merged_rules["additional_rules"] = {}
+
+        # Create style on disk (dir, move images, write style.json)
+        create_new_style(
+            style_id=style_id,
+            name=name,
+            description=description,
+            image_files=image_files or [],
+            visual_rules=merged_rules,
+        )
+
+        # Build embeddings if images were provided
+        if image_files:
+            index = self.index_registry.get_index(style_id)
+            index.build_index()
+
+        return self.style_registry.get_style(style_id)
+
+    def delete_style(self, style_id: str) -> int:
+        """
+        Delete a style, its reference images, and embedding cache.
+
+        Returns:
+            Number of reference images deleted
+        """
+        self._initialize()
+
+        # Clear registry cache
+        self.style_registry.delete_style(style_id)
+
+        # Clear embedding cache
+        if style_id in self.index_registry._indices:
+            self.index_registry._indices[style_id].clear_cache()
+            del self.index_registry._indices[style_id]
+        else:
+            # Clear cache file directly even if index wasn't loaded
+            from rag.index import StyleImageIndex
+            temp_index = StyleImageIndex(
+                style_id=style_id,
+                style_registry=self.style_registry,
+                embedder=self.embedder,
+                cache_dir="rag/cache"
+            )
+            temp_index.clear_cache()
+
+        # Delete style directory and reference images from disk
+        return fs_delete_style(style_id)
+
+    def add_images_to_style(self, style_id: str, image_files: List[Path]) -> Dict[str, int]:
+        """
+        Add images to an existing style, rebuild embeddings.
+
+        Returns:
+            Dict with 'added' and 'skipped' counts
+        """
+        self._initialize()
+
+        # Add images with dedup
+        added, skipped = add_images_to_existing_style(style_id, image_files)
+
+        # Clear registry cache so updated style is loaded on next access
+        self.style_registry._cache.pop(style_id, None)
+
+        # Rebuild embeddings for this style
+        if added > 0:
+            # Clear stale index cache
+            if style_id in self.index_registry._indices:
+                del self.index_registry._indices[style_id]
+            index = self.index_registry.get_index(style_id)
+            index.build_index()
+
+        return {"added": added, "skipped": skipped}
+
     def generate(
         self,
         user_input: str,
         style_id: str,
-        num_images: int = 4
+        num_images: int = 4,
+        session_id: Optional[str] = None
     ) -> Tuple[GenerationResult, PromptSpec, RetrievalResult, Style]:
         """
         Run the full generation pipeline.
@@ -81,6 +188,7 @@ class PipelineService:
             user_input: Natural language description from the user
             style_id: ID of the style to use
             num_images: Number of images to generate
+            session_id: Optional session ID for conversation context
 
         Returns:
             Tuple of (GenerationResult, PromptSpec, RetrievalResult, Style)
@@ -90,13 +198,24 @@ class PipelineService:
         # Step 1: Get style
         style = self.style_registry.get_style(style_id)
 
-        # Step 2: Compile prompt with GPT
-        prompt_spec = self.compiler.compile(user_input, style)
+        # Step 2: Get conversation history if session exists
+        conversation_history = None
+        context = None
+        if session_id:
+            context = self.session_store.get_or_create(session_id, style_id)
+            if context.turn_count > 0:
+                conversation_history = context.to_gpt_messages()
 
-        # Step 3: Retrieve reference images
+        # Step 3: Compile prompt with GPT (with conversation context)
+        prompt_spec = self.compiler.compile(
+            user_input, style,
+            conversation_history=conversation_history
+        )
+
+        # Step 4: Retrieve reference images
         retrieval_result = self.retriever.retrieve(prompt_spec, style, top_k=5)
 
-        # Step 4: Generate images
+        # Step 5: Generate images
         config = GenerationConfig(
             num_images=num_images,
             resolution=(1024, 1024),
@@ -110,4 +229,114 @@ class PipelineService:
             config=config
         )
 
+        # Step 6: Record generation turn in session
+        if session_id and context is not None:
+            turn = ConversationTurn(
+                turn_number=context.turn_count + 1,
+                role="generate",
+                timestamp=result.timestamp,
+                user_input=user_input,
+                style_id=style_id,
+                refined_intent=prompt_spec.refined_intent,
+                negative_constraints=prompt_spec.negative_constraints,
+                image_paths=result.images
+            )
+            context.add_turn(turn)
+            self.conversation_logger.log_turn(session_id, style_id, turn.to_dict())
+
         return result, prompt_spec, retrieval_result, style
+
+    def add_feedback(
+        self,
+        session_id: str,
+        style_id: str,
+        feedback: str,
+    ) -> Tuple[int, bool]:
+        """
+        Record feedback in session context.
+
+        Returns:
+            Tuple of (turn_number, was_summarized) — summarized is True if
+            the 10-feedback threshold triggered auto-summarization.
+        """
+        self._initialize()
+        context = self.session_store.get_or_create(session_id, style_id)
+        turn = ConversationTurn(
+            turn_number=context.turn_count + 1,
+            role="feedback",
+            timestamp=datetime.utcnow().isoformat(),
+            user_input=feedback,
+            style_id=style_id,
+        )
+        context.add_turn(turn)
+        self.conversation_logger.log_turn(session_id, style_id, turn.to_dict())
+
+        # Auto-summarize at 10 feedbacks
+        was_summarized = False
+        if context.feedback_count >= 10:
+            self.summarize_feedback(session_id, style_id)
+            was_summarized = True
+
+        return turn.turn_number, was_summarized
+
+    def summarize_feedback(
+        self,
+        session_id: str,
+        style_id: str
+    ) -> Optional[str]:
+        """
+        Summarize accumulated feedback with GPT and persist to style.json.
+
+        Returns:
+            The summary string, or None if no feedback to summarize.
+        """
+        self._initialize()
+        context = self.session_store.get_or_create(session_id, style_id)
+        feedback_texts = context.get_feedback_texts()
+
+        if not feedback_texts:
+            return None
+
+        # Get existing summary and style info
+        style = self.style_registry.get_style(style_id)
+        existing_summary = style.feedback_summary or ""
+
+        # Build summarization prompt
+        feedback_list = "\n".join(
+            f"{i+1}. {text}" for i, text in enumerate(feedback_texts)
+        )
+        summarize_prompt = (
+            f"You are summarizing designer feedback about generated concept sketches "
+            f"in the '{style.name}' style.\n\n"
+        )
+        if existing_summary:
+            summarize_prompt += f"Previous summary:\n{existing_summary}\n\n"
+        summarize_prompt += (
+            f"New feedback entries:\n{feedback_list}\n\n"
+            f"Produce a concise summary of design directives that should guide future "
+            f"image generation for this style. Incorporate the previous summary if present. "
+            f"Focus on recurring stylistic preferences, specific corrections, and what to avoid. "
+            f"Keep the summary under 200 words. Output only the summary text, no JSON."
+        )
+
+        # Call GPT for summarization
+        response = self.compiler.client.chat.completions.create(
+            model=self.compiler.model,
+            messages=[
+                {"role": "system", "content": "You are a design feedback summarizer."},
+                {"role": "user", "content": summarize_prompt}
+            ],
+            temperature=0.3
+        )
+        summary = response.choices[0].message.content.strip()
+
+        # Persist to style.json
+        update_style_json(style_id, {"feedback_summary": summary})
+
+        # Clear registry cache so next load picks up the new summary
+        self.style_registry._cache.pop(style_id, None)
+
+        # Reset session (feedback has been summarized)
+        self.session_store.reset(session_id, style_id)
+
+        return summary

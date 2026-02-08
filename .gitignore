@@ -6,3 +6,5 @@ cache/
 rag/reference_images
 style/style_library/
 .env
+logs/
+ui_reference/

@@ -10,24 +10,23 @@ from google.genai import types
 from PIL import Image
 
 
-SYSTEM_PROMPT = """You are a sketch assistant for a senior designer in fashion. You will design the patterns on commercial products. 
+SYSTEM_PROMPT = """You are a sketch assistant creating mascot/character patterns for apparel (polos, hats, bags).
 
-The following rules always need to be followed
+**COLOR: GRAYSCALE ONLY (MANDATORY)**
+- Black, white, and gray tones ONLY - NO color, tints, or sepia
+- Pencil and ink sketch
 
-**Visual Rules:**
-- Black & white or grayscale ONLY (no color)
-- Rough sketch / pencil / loose ink style
-- Thick outlines, minimal interior detail
-- No gradients, textures, or photorealism
-- No line patterns for shadows (avoid hatching/crosshatching)
-- No typography unless explicitly requested
-- Exaggerated perspective angles and proportions
-- Can use cropped compositions (close-ups, partial character views)
+**CHARACTER & COMPOSITION:**
+- Character fills most of frame (close-up and cropped preferred)
+- Natural action poses with believable body mechanics
+- Clean/empty background - isolated design element, not a scene
+- Exaggerated proportions for appeal
 
-**Practical Rules:**
-- Clean background
-- Looks like 10-15 minute human sketch
-- High contrast for visibility
+**STYLE:**
+- Rough sketch with loose ink, thick outlines, minimal interior detail
+- No gradients, textures, photorealism, or hatching
+- High contrast, looks like a 10-15 min human sketch
+- No text unless requested
 """
 
 
@@ -59,7 +58,8 @@ class NanaBananaClient:
         resolution: tuple = (1050, 1875),
         aspect_ratio: str = "9:16",
         image_size: str = "2K",
-        seed: Optional[int] = None
+        seed: Optional[int] = None,
+        temperature: float = 0.8
     ) -> List[bytes]:
         """
         Generate sketch images using Google Gemini 2.5 Flash Image model.
@@ -72,6 +72,7 @@ class NanaBananaClient:
             aspect_ratio: Gemini aspect ratio preset ("1:1", "9:16", "16:9", etc.)
             image_size: Gemini image size preset ("1K", "2K", "4K")
             seed: Random seed for reproducibility (note: Gemini doesn't support seeds directly)
+            temperature: Controls creativity (0.0-2.0). Lower = more deterministic, higher = more creative. Default 0.8
 
         Returns:
             List of image data as bytes
@@ -98,6 +99,7 @@ IMPORTANT OUTPUT REQUIREMENTS:
 - Generate exactly 1 single design image (not multiple designs in one image)
 - Match the layout, style, and technique shown in the reference images below
 - Do NOT include any text, words, letters, or numbers in the generated image
+- OUTPUT MUST BE BLACK AND WHITE / GRAYSCALE ONLY - NO COLOR
 """
 
         # Generate images one at a time (Gemini generates one image per call)
@@ -115,6 +117,7 @@ IMPORTANT OUTPUT REQUIREMENTS:
                     config=types.GenerateContentConfig(
                         systemInstruction=SYSTEM_PROMPT,
                         responseModalities=["IMAGE", "TEXT"],
+                        temperature=temperature,
                         imageConfig=types.ImageConfig(
                             aspectRatio=aspect_ratio
                         )

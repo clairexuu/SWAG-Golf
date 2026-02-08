@@ -76,11 +76,15 @@ api/                   # Python FastAPI server
 
 ## Components
 
-**StyleSelector** (Left Panel) - Fetches and displays styles, radio selection
+**StyleSelector** On the left 1/4 and upper 1/2 of the page, fetches and displays styles, radio selection. 
 
-**ChatInput** (Center Panel) - Text input, generate button, Cmd+Enter shortcut
+**StyleManager** On the left 1/4 and lower 1/2 of the page, user has three options: add image to an existing style, delete a style, or initialize a new style (with or without reference image).
 
-**SketchGrid** (Right Panel) - 2x2 grid, download/regenerate/flag actions
+**UserPromptIput** In the middle of the page, upper 1/2, takes user text input and a generate button.
+
+**UserFeebackIput** In the middle of the page, lower 1/2, takes user text input (feedback of generated image) and a regenerate button or a submit button.
+
+**SketchGrid** On the right 1/2 of the page, displays generated images (each image is labeled 1, 2,3, 4 etc.) in a 2x2 grid, allows user to download each image.
 
 ## Status
 

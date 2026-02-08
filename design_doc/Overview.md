@@ -9,12 +9,6 @@ The system is explicitly designed to:
 - Enforce exact stylistic fidelity
 - Optimize for speed and concept throughput, not final polish
 
-## Current Version — MVP
-- Single designer
-- 3–5 styles
-- RAG-based reference retrieval
-- Sketch-only generation
-
 ## Backend Workflow
 1. Raw User Input
 2. User make Style Selection from Style Library, used for downstream retrieval and generation
@@ -22,6 +16,7 @@ The system is explicitly designed to:
 4. RAG from image database, hard-filter by Style then retrieve top-K by semantic similarity
 5. Image Generation: Prompt Specification (step 3) and Retrieved Reference Images (step 4) are sent to Nano Banana (model-agnostic via adapter layer)
 6. Output & Iteration: User can download, draw over, or provide feedback on the output image
+7. Feedback & Learning: User feedback improves future generations via in-session context (short-term) and persistent GPT-summarized style learning (long-term)
 
 ## Technical Architecture
 Frontend: Web app
@@ -37,9 +32,11 @@ Style Selection --> @design_doc/Style_Selection.md
 RAG --> @design_doc/RAG.md
 Image Generation --> @design_doc/Image_Generation.md
 Frontend --> @design_doc/Frontend.md
+Feedback & Learning Loop --> @design_doc/Feedback_Learning_Loop.md
 
-To Run --> @design_doc/Get_Started.md
-Issue and Progress Tracker --> @design_doc/Tracker.md
+To Step --> @design_doc/Backend_SetUp.md
+To Start Dev --> @design_doc/Frontend.md
+Issue and Progress Tracker --> @design_doc/Progress.md
 
 ## Folder Structure
 
@@ -55,4 +52,6 @@ Issue and Progress Tracker --> @design_doc/Tracker.md
 └── generate/               # Image Generation 
 │
 └── generated_outputs/      # Store outputs
+│
+└── feedback/               # Feedback & Learning Loop
 ```

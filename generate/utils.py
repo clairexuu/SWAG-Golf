@@ -72,3 +72,36 @@ def create_blank_sketch(resolution: Tuple[int, int], output_path: str) -> str:
     img.save(output_path, 'PNG')
 
     return str(output_path.absolute())
+
+
+def convert_to_grayscale(image_bytes: bytes) -> bytes:
+    """
+    Convert an image to grayscale using the luminosity method.
+
+    PIL's 'L' mode conversion uses similar weights to the luminosity formula
+    (0.299*R + 0.587*G + 0.114*B) which accounts for human perception.
+
+    Args:
+        image_bytes: Raw image data (PNG or JPEG)
+
+    Returns:
+        Grayscale image as PNG bytes (stored as RGB for consistency)
+    """
+    from io import BytesIO
+
+    img = Image.open(BytesIO(image_bytes))
+
+    # Convert to RGB if necessary (handles RGBA, palette modes, etc.)
+    if img.mode != 'RGB':
+        img = img.convert('RGB')
+
+    # Apply luminosity-based grayscale conversion
+    grayscale_img = img.convert('L')
+
+    # Convert back to RGB for consistency (grayscale stored as RGB)
+    rgb_grayscale = grayscale_img.convert('RGB')
+
+    # Save to bytes
+    output_buffer = BytesIO()
+    rgb_grayscale.save(output_buffer, format='PNG')
+    return output_buffer.getvalue()

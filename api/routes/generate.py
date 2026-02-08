@@ -18,6 +18,7 @@ class GenerateRequest(BaseModel):
     styleId: str
     numImages: Optional[int] = 4
     experimentalMode: Optional[bool] = False
+    sessionId: Optional[str] = None
 
 
 @router.post("/generate")
@@ -46,7 +47,8 @@ def generate_sketches(request: GenerateRequest):
         result, prompt_spec, retrieval_result, style = service.generate(
             user_input=request.input,
             style_id=request.styleId,
-            num_images=request.numImages or 4
+            num_images=request.numImages or 4,
+            session_id=request.sessionId
         )
 
         # Build response matching TypeScript interface

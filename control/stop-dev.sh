@@ -18,6 +18,7 @@ else
     echo "Trying to kill processes by port..."
 
     # Try to kill by port
+    lsof -ti:8000 | xargs kill -9 2>/dev/null || true
     lsof -ti:3001 | xargs kill -9 2>/dev/null || true
     lsof -ti:5173 | xargs kill -9 2>/dev/null || true
 

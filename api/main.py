@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from api.routes import styles, generate
+from api.routes import styles, generate, feedback
 
 app = FastAPI(
     title="SWAG-Golf Python API",
@@ -46,6 +46,7 @@ def health_check():
 # Mount routes
 app.include_router(styles.router)
 app.include_router(generate.router)
+app.include_router(feedback.router)
 
 
 @app.on_event("startup")
@@ -60,6 +61,8 @@ async def startup_event():
     print("  GET  http://localhost:8000/health")
     print("  GET  http://localhost:8000/styles")
     print("  POST http://localhost:8000/generate")
+    print("  POST http://localhost:8000/feedback")
+    print("  POST http://localhost:8000/feedback/summarize")
     print("  GET  http://localhost:8000/generated/{path} (static files)")
     print("=" * 60)
 

@@ -1,8 +1,11 @@
 // GET /api/styles - Return available style options
 
 import { Router } from 'express';
+import { Readable } from 'stream';
 import type { Style } from '../../../shared/schema/style.js';
 import { fetchFromPython, checkPythonHealth } from '../services/python-client.js';
+
+const PYTHON_API_URL = process.env.PYTHON_API_URL || 'http://127.0.0.1:8000';
 
 const router = Router();
 
@@ -112,6 +115,95 @@ router.get('/styles', async (req, res) => {
     res.json({
       success: true,
       styles: mockStyles
+    });
+  }
+});
+
+router.post('/styles', async (req, res) => {
+  try {
+    const pythonHealthy = await checkPythonHealth();
+    if (!pythonHealthy) {
+      return res.status(503).json({
+        success: false,
+        error: 'Python backend is unavailable'
+      });
+    }
+
+    // Forward the raw multipart request stream to Python
+    const response = await fetch(`${PYTHON_API_URL}/styles`, {
+      method: 'POST',
+      headers: {
+        'content-type': req.headers['content-type'] as string,
+      },
+      body: Readable.toWeb(req) as ReadableStream,
+      duplex: 'half',
+    } as RequestInit);
+
+    const data = await response.json();
+    return res.status(response.status).json(data);
+  } catch (error: any) {
+    console.error('Error creating style:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to create style'
+    });
+  }
+});
+
+router.post('/styles/:styleId/images', async (req, res) => {
+  const { styleId } = req.params;
+  try {
+    const pythonHealthy = await checkPythonHealth();
+    if (!pythonHealthy) {
+      return res.status(503).json({
+        success: false,
+        error: 'Python backend is unavailable'
+      });
+    }
+
+    // Forward the raw multipart request stream to Python
+    const response = await fetch(`${PYTHON_API_URL}/styles/${styleId}/images`, {
+      method: 'POST',
+      headers: {
+        'content-type': req.headers['content-type'] as string,
+      },
+      body: Readable.toWeb(req) as ReadableStream,
+      duplex: 'half',
+    } as RequestInit);
+
+    const data = await response.json();
+    return res.status(response.status).json(data);
+  } catch (error: any) {
+    console.error(`Error adding images to style ${styleId}:`, error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to add images'
+    });
+  }
+});
+
+router.delete('/styles/:styleId', async (req, res) => {
+  const { styleId } = req.params;
+  try {
+    const pythonHealthy = await checkPythonHealth();
+    if (!pythonHealthy) {
+      return res.status(503).json({
+        success: false,
+        error: 'Python backend is unavailable'
+      });
+    }
+
+    const response = await fetchFromPython<{ success: boolean; message: string }>(
+      `/styles/${styleId}`,
+      { method: 'DELETE' }
+    );
+    return res.json(response);
+  } catch (error: any) {
+    console.error(`Error deleting style ${styleId}:`, error);
+    const status = error.message?.includes('404') ? 404 : 500;
+    res.status(status).json({
+      success: false,
+      error: error.message || 'Failed to delete style'
     });
   }
 });

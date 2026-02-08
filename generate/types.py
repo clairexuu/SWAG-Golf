@@ -16,6 +16,7 @@ class GenerationConfig:
     seed: Optional[int] = None  # For reproducibility
     aspect_ratio: str = "9:16"  # Gemini aspect ratio preset (9:16 for portrait ~1050x1875)
     image_size: str = "2K"  # Gemini image size preset ("1K", "2K", "4K")
+    enforce_grayscale: bool = True  # Post-process images to ensure grayscale
 
 
 @dataclass
@@ -43,7 +44,8 @@ class GenerationResult:
                 "model_name": self.config.model_name,
                 "seed": self.config.seed,
                 "aspect_ratio": self.config.aspect_ratio,
-                "image_size": self.config.image_size
+                "image_size": self.config.image_size,
+                "enforce_grayscale": self.config.enforce_grayscale
             }
         }
 

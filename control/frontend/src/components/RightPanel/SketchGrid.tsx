@@ -20,7 +20,7 @@ export default function SketchGrid({ sketches, isGenerating, error }: SketchGrid
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `sketch-${sketch.id}.png`;
+      a.download = `sketch_${Date.now()}.png`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -30,20 +30,10 @@ export default function SketchGrid({ sketches, isGenerating, error }: SketchGrid
     }
   };
 
-  const handleRegenerate = (sketchId: string) => {
-    console.log(`[MVP] Regenerate sketch: ${sketchId}`);
-    // TODO: Implement regeneration functionality
-  };
-
-  const handleFlag = (sketchId: string) => {
-    console.log(`[MVP] Flag sketch: ${sketchId}`);
-    // TODO: Implement flag/feedback functionality
-  };
-
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center h-full">
-        <div className="text-red-500 text-center">
+        <div className="text-swag-pink text-center">
           <svg
             className="w-12 h-12 mx-auto mb-4"
             fill="none"
@@ -57,8 +47,8 @@ export default function SketchGrid({ sketches, isGenerating, error }: SketchGrid
               d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
             />
           </svg>
-          <p className="font-semibold">Generation Failed</p>
-          <p className="text-sm mt-2 text-gray-600">{error}</p>
+          <p className="font-semibold text-swag-pink">Generation Failed</p>
+          <p className="text-sm mt-2 text-swag-text-secondary">{error}</p>
         </div>
       </div>
     );
@@ -67,7 +57,7 @@ export default function SketchGrid({ sketches, isGenerating, error }: SketchGrid
   if (isGenerating) {
     return (
       <div className="flex flex-col items-center justify-center h-full">
-        <svg className="animate-spin h-12 w-12 text-blue-600 mb-4" viewBox="0 0 24 24">
+        <svg className="animate-spin h-12 w-12 text-swag-green mb-4" viewBox="0 0 24 24">
           <circle
             className="opacity-25"
             cx="12"
@@ -83,8 +73,8 @@ export default function SketchGrid({ sketches, isGenerating, error }: SketchGrid
             d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
           />
         </svg>
-        <p className="text-gray-600 font-medium">Generating sketches...</p>
-        <p className="text-sm text-gray-500 mt-2">This may take a few moments</p>
+        <p className="text-swag-white font-medium">Generating sketches...</p>
+        <p className="text-sm text-swag-text-tertiary mt-2">This may take a few moments</p>
       </div>
     );
   }
@@ -93,7 +83,7 @@ export default function SketchGrid({ sketches, isGenerating, error }: SketchGrid
     return (
       <div className="flex flex-col items-center justify-center h-full text-center">
         <svg
-          className="w-16 h-16 text-gray-400 mb-4"
+          className="w-16 h-16 text-swag-text-quaternary mb-4"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -105,56 +95,44 @@ export default function SketchGrid({ sketches, isGenerating, error }: SketchGrid
             d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
           />
         </svg>
-        <p className="text-gray-600 font-medium">No sketches yet</p>
-        <p className="text-sm text-gray-500 mt-2">Generate your first concept sketch</p>
+        <p className="text-swag-white font-medium">No sketches yet</p>
+        <p className="text-sm text-swag-text-tertiary mt-2">Generate your first concept sketch</p>
       </div>
     );
   }
 
   return (
     <div className="h-full flex flex-col">
-      <h2 className="text-lg font-semibold mb-4 text-gray-800">
+      <h2 className="panel-heading">
         Generated Sketches ({sketches.length})
       </h2>
 
-      <div className="flex-1 grid grid-cols-2 gap-4 overflow-y-auto">
-        {sketches.map((sketch) => (
-          <div key={sketch.id} className="flex flex-col bg-white border-2 border-gray-200 rounded-lg overflow-hidden">
-            {/* Generated image */}
-            <div className="flex-1 min-h-[200px] bg-gray-100 flex items-center justify-center p-2">
-              <img
-                src={getImageUrl(sketch.imagePath)}
-                alt={`Sketch ${sketch.id}`}
-                className="max-w-full max-h-full object-contain"
-              />
-            </div>
+      <div className="flex-1 grid grid-cols-2 gap-3 overflow-y-auto">
+        {sketches.map((sketch, index) => {
+          const imageNum = index + 1;
+          return (
+            <div key={sketch.id} className="flex flex-col bg-surface-2 overflow-hidden border border-swag-border">
+              <div className="relative flex-1 min-h-[200px] bg-surface-0 flex items-center justify-center p-2">
+                <img
+                  src={getImageUrl(sketch.imagePath)}
+                  alt={`Sketch ${imageNum}`}
+                  className="max-w-full max-h-full object-contain"
+                />
+              </div>
 
-            {/* Quick actions */}
-            <div className="p-3 border-t border-gray-200 flex gap-2">
-              <button
-                onClick={() => handleDownload(sketch)}
-                className="flex-1 px-3 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-                title="Download sketch"
-              >
-                Download
-              </button>
-              <button
-                onClick={() => handleRegenerate(sketch.id)}
-                className="px-3 py-2 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors"
-                title="Regenerate this sketch"
-              >
-                ↻
-              </button>
-              <button
-                onClick={() => handleFlag(sketch.id)}
-                className="px-3 py-2 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors"
-                title="Flag for review"
-              >
-                ⚑
-              </button>
+              {/* Quick actions */}
+              <div className="p-2 border-t border-swag-border flex gap-2">
+                <button
+                  onClick={() => handleDownload(sketch)}
+                  className="flex-1 btn-primary px-3 py-2 text-sm"
+                  title="Download sketch"
+                >
+                  Download
+                </button>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

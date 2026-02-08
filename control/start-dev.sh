@@ -22,13 +22,36 @@ echo ""
 # Get the project root directory (one level up from control/)
 PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
 
-# Start Python API server
+# Kill any stale process on port 8000
+STALE_PID=$(lsof -ti:8000 2>/dev/null)
+if [ -n "$STALE_PID" ]; then
+  echo -e "${BLUE}Killing stale process on port 8000 (PID: $STALE_PID)...${NC}"
+  kill -9 $STALE_PID 2>/dev/null || true
+  sleep 1
+fi
+
+# Start Python API server (activate venv first)
 echo -e "${GREEN}[1/4] Starting Python API Server (port 8000)...${NC}"
 cd "$PROJECT_ROOT"
-python -m uvicorn api.main:app --reload --port 8000 > /tmp/swag-python.log 2>&1 &
+source "$PROJECT_ROOT/.venv/bin/activate"
+uvicorn api.main:app --reload --port 8000 > /tmp/swag-python.log 2>&1 &
 PYTHON_PID=$!
 echo "      PID: $PYTHON_PID"
-sleep 3
+
+# Wait for Python server to be healthy (up to 10 seconds)
+echo "      Waiting for Python server to start..."
+for i in $(seq 1 10); do
+  if curl -sf http://127.0.0.1:8000/health > /dev/null 2>&1; then
+    echo -e "      ${GREEN}Python server is healthy!${NC}"
+    break
+  fi
+  if [ $i -eq 10 ]; then
+    echo -e "\033[0;31m      ERROR: Python server failed to start after 10s. Check /tmp/swag-python.log${NC}"
+    kill $PYTHON_PID 2>/dev/null || true
+    exit 1
+  fi
+  sleep 1
+done
 
 # Start Express API server
 echo -e "${GREEN}[2/4] Starting Express API Server (port 3001)...${NC}"

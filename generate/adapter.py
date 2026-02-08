@@ -76,4 +76,12 @@ class ImageModelAdapter(ABC):
             negative = ", ".join(prompt_spec.negative_constraints)
             prompt += f"\n\n**Avoid:** {negative}"
 
+        # Add mandatory grayscale enforcement
+        prompt += """
+
+**MANDATORY OUTPUT FORMAT:**
+- GRAYSCALE ONLY: Output must be black and white / grayscale
+- NO COLOR - use only black, white, and shades of gray
+- Render as a pencil/ink sketch on white paper"""
+
         return prompt

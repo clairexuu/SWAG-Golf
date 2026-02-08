@@ -11,3 +11,4 @@ class Style:
     visual_rules: Dict[str, Any]  # Visual constraints (line_weight, looseness, complexity, etc.)
     reference_images: List[str] = field(default_factory=list)  # Paths to curated reference images
     do_not_use: Optional[List[str]] = field(default_factory=list)  # Paths to excluded reference images
+    feedback_summary: Optional[str] = None  # GPT-summarized designer feedback for this style

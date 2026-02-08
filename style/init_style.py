@@ -22,11 +22,12 @@ Usage:
 """
 
 import argparse
+import hashlib
 import json
 import shutil
 import sys
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple
 
 from uuid import uuid4
 
@@ -70,6 +71,15 @@ def validate_image_folder(images_folder: Path) -> List[Path]:
         )
 
     return image_files
+
+
+def compute_image_hash(file_path: Path) -> str:
+    """Compute SHA-256 hash of a file's content."""
+    h = hashlib.sha256()
+    with open(file_path, 'rb') as f:
+        for chunk in iter(lambda: f.read(8192), b''):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def move_images(
@@ -207,10 +217,14 @@ def create_new_style(
 def add_images_to_existing_style(
     style_id: str,
     image_files: List[Path],
-    style_library_root: Path = Path("style/style_library")
-) -> int:
+    style_library_root: Path = Path("style/style_library"),
+    rag_images_dir: Path = Path("rag/reference_images")
+) -> Tuple[int, int]:
     """
-    Add images to an existing style.
+    Add images to an existing style, skipping duplicates by content hash.
+
+    Returns:
+        Tuple of (added_count, skipped_count)
     """
     style_json_path = style_library_root / style_id / "style.json"
 
@@ -222,12 +236,31 @@ def add_images_to_existing_style(
         with open(style_json_path, 'r', encoding='utf-8') as f:
             style_data = json.load(f)
 
-        # Get current image count
         current_images = style_data.get("reference_images", [])
-        current_count = len(current_images)
 
-        # Move new images
-        new_filenames = move_images(image_files)
+        # Build hash set of existing reference images
+        existing_hashes = set()
+        for img_filename in current_images:
+            img_path = rag_images_dir / img_filename
+            if img_path.exists():
+                existing_hashes.add(compute_image_hash(img_path))
+
+        # Filter out duplicates
+        unique_files = []
+        skipped = 0
+        for image_file in image_files:
+            h = compute_image_hash(image_file)
+            if h in existing_hashes:
+                skipped += 1
+            else:
+                existing_hashes.add(h)  # prevent intra-batch duplicates
+                unique_files.append(image_file)
+
+        if not unique_files:
+            return 0, skipped
+
+        # Move only unique images
+        new_filenames = move_images(unique_files, rag_images_dir)
 
         # Append to reference_images
         updated_images = current_images + new_filenames
@@ -235,10 +268,55 @@ def add_images_to_existing_style(
         # Update style.json
         update_style_json(style_id, {"reference_images": updated_images}, style_library_root)
 
-        return len(new_filenames)
+        return len(new_filenames), skipped
 
     except Exception as e:
         raise RuntimeError(f"Failed to add images to style: {e}")
+
+
+def delete_style(
+    style_id: str,
+    style_library_root: Path = Path("style/style_library"),
+    rag_images_dir: Path = Path("rag/reference_images")
+) -> int:
+    """
+    Delete a style and all its associated reference images.
+
+    Args:
+        style_id: Style identifier to delete
+        style_library_root: Root directory for style library
+        rag_images_dir: Directory containing reference images
+
+    Returns:
+        Number of reference images deleted
+
+    Raises:
+        ValueError: If style doesn't exist
+    """
+    style_dir = style_library_root / style_id
+    style_json_path = style_dir / "style.json"
+
+    if not style_json_path.exists():
+        raise ValueError(f"Style '{style_id}' does not exist at {style_json_path}")
+
+    # Read style.json to get reference image filenames
+    with open(style_json_path, 'r', encoding='utf-8') as f:
+        style_data = json.load(f)
+
+    reference_images = style_data.get("reference_images", [])
+
+    # Delete reference images from rag/reference_images/
+    deleted_count = 0
+    for image_filename in reference_images:
+        image_path = rag_images_dir / image_filename
+        if image_path.exists():
+            image_path.unlink()
+            deleted_count += 1
+
+    # Delete the style directory (style.json and any other files)
+    shutil.rmtree(str(style_dir))
+
+    return deleted_count
 
 
 def validate_style(style_id: str) -> None:
@@ -347,8 +425,10 @@ def handle_add_images(args):
         print(f"✓ Style '{args.style_id}' exists (currently has {current_count} images)")
 
         # Add images
-        added_count = add_images_to_existing_style(args.style_id, image_files)
+        added_count, skipped_count = add_images_to_existing_style(args.style_id, image_files)
         print(f"✓ Moved {added_count} images to rag/reference_images/ (renamed with UUIDs)")
+        if skipped_count:
+            print(f"✓ Skipped {skipped_count} duplicate image(s)")
         print(f"✓ Updated style.json (now has {current_count + added_count} reference images)")
 
         # Success

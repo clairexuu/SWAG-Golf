@@ -58,7 +58,8 @@ class StyleRegistry:
             description=data["description"],
             visual_rules=visual_rules,
             reference_images=reference_images,
-            do_not_use=do_not_use
+            do_not_use=do_not_use,
+            feedback_summary=data.get("feedback_summary")
         )
 
         self._cache[style_id] = style
@@ -86,6 +87,16 @@ class StyleRegistry:
         """
         style_ids = self.list_styles()
         return [self.get_style(style_id) for style_id in style_ids]
+
+    def delete_style(self, style_id: str) -> None:
+        """
+        Remove a style from the cache.
+        Call this before deleting the style from disk.
+        Raises ValueError if style doesn't exist.
+        """
+        if not self.validate_style(style_id):
+            raise ValueError(f"Style not found: {style_id}")
+        self._cache.pop(style_id, None)
 
     def validate_style(self, style_id: str) -> bool:
         """

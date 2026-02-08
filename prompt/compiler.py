@@ -1,7 +1,7 @@
 # prompt/compiler.py
 import json
 import os
-from typing import Optional
+from typing import Dict, List, Optional
 from pathlib import Path
 from openai import OpenAI
 from .schema import PromptSpec
@@ -42,13 +42,19 @@ class PromptCompiler:
         with open(prompt_file, 'r') as f:
             return f.read()
 
-    def compile(self, user_text: str, style) -> PromptSpec:
+    def compile(
+        self,
+        user_text: str,
+        style,
+        conversation_history: Optional[List[Dict[str, str]]] = None
+    ) -> PromptSpec:
         """
         Compile natural language input into a structured PromptSpec.
 
         Args:
             user_text: Raw designer input (free-form natural language)
             style: Selected style object with id
+            conversation_history: Optional list of prior turn messages in OpenAI chat format
 
         Returns:
             PromptSpec: Structured, model-agnostic prompt specification
@@ -59,17 +65,22 @@ class PromptCompiler:
             "style_description": style.description,
             "visual_rules": style.visual_rules
         }
+        if style.feedback_summary:
+            style_context["learned_preferences"] = style.feedback_summary
 
         # Build the compilation request
         user_prompt = self._build_compilation_request(user_text, style_context)
 
+        # Build messages array with optional conversation history
+        messages = [{"role": "system", "content": self.system_prompt}]
+        if conversation_history:
+            messages.extend(conversation_history)
+        messages.append({"role": "user", "content": user_prompt})
+
         # Call GPT to interpret and structure the prompt
         response = self.client.chat.completions.create(
             model=self.model,
-            messages=[
-                {"role": "system", "content": self.system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
+            messages=messages,
             temperature=TEMPERATURE,
             response_format={"type": "json_object"}
         )

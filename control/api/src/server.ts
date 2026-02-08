@@ -6,6 +6,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import generateRouter from './routes/generate.js';
 import stylesRouter from './routes/styles.js';
+import feedbackRouter from './routes/feedback.js';
 import { checkPythonHealth } from './services/python-client.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -43,6 +44,7 @@ app.get('/api/health', async (req, res) => {
 // Mount routes
 app.use('/api', generateRouter);
 app.use('/api', stylesRouter);
+app.use('/api', feedbackRouter);
 
 // 404 handler
 app.use((req, res) => {

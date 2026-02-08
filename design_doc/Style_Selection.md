@@ -42,14 +42,16 @@ class Style:
 - `list_styles()` - List all available style IDs
 - `get_all_styles()` - Retrieve all styles
 - `validate_style(style_id)` - Check if a style exists without loading it
+- `delete_style(style_id)` - Evict a style from cache before deletion
 
 ### Style Management (`style/init_style.py`)
 
-Command-line tool for managing styles in the style library that supports
-- Create new style
-- Add images to existing style
+Command-line tool and API-callable functions for managing styles in the style library:
+- Create new style (name required; description, visual rules, and reference images optional — `style_id` auto-generated from name via `slugify()`, visual rules default to `DEFAULT_VISUAL_RULES` when omitted, embeddings built automatically when images are provided). Frontend supports selecting a folder or individual image files as reference images.
+- Add images to existing style (with SHA-256 content-hash duplicate detection — skips images already present in the style)
+- Delete style (removes style directory, all associated reference images from `rag/reference_images/`, and embedding cache from `rag/cache/`)
 
-Then moves images to `rag/reference_images/` with UUID-based filenames
+Moves images to `rag/reference_images/` with UUID-based filenames on create/add. On create/add, embeddings are automatically rebuilt for the style. On delete, removes the UUID-named images listed in the style's `reference_images`.
 
 ### Directory Structure
 

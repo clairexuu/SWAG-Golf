@@ -8,6 +8,7 @@ export interface GenerateRequest {
   styleId: string;
   numImages?: number;
   experimentalMode?: boolean;
+  sessionId?: string;
 }
 
 export interface Sketch {
@@ -31,6 +32,36 @@ export interface GenerateResponse {
       configUsed: GenerationConfig;
     };
   };
+  error?: {
+    code: string;
+    message: string;
+  };
+}
+
+export interface FeedbackRequest {
+  sessionId: string;
+  styleId: string;
+  feedback: string;
+}
+
+export interface FeedbackResponse {
+  success: boolean;
+  turnNumber?: number;
+  summarized?: boolean;
+  error?: {
+    code: string;
+    message: string;
+  };
+}
+
+export interface SummarizeRequest {
+  sessionId: string;
+  styleId: string;
+}
+
+export interface SummarizeResponse {
+  success: boolean;
+  summary?: string;
   error?: {
     code: string;
     message: string;

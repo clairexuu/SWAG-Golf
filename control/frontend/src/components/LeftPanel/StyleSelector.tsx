@@ -7,15 +7,13 @@ import type { Style } from '../../types';
 interface StyleSelectorProps {
   selectedStyleId: string | null;
   onStyleSelect: (styleId: string) => void;
-  experimentalMode: boolean;
-  onExperimentalToggle: (enabled: boolean) => void;
+  refreshKey?: number;
 }
 
 export default function StyleSelector({
   selectedStyleId,
   onStyleSelect,
-  experimentalMode,
-  onExperimentalToggle,
+  refreshKey = 0,
 }: StyleSelectorProps) {
   const [styles, setStyles] = useState<Style[]>([]);
   const [loading, setLoading] = useState(true);
@@ -24,6 +22,7 @@ export default function StyleSelector({
   useEffect(() => {
     async function fetchStyles() {
       try {
+        setLoading(true);
         const fetchedStyles = await getStyles();
         setStyles(fetchedStyles);
       } catch (err) {
@@ -35,12 +34,12 @@ export default function StyleSelector({
     }
 
     fetchStyles();
-  }, []);
+  }, [refreshKey]);
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="text-gray-500">Loading styles...</div>
+        <div className="text-swag-text-tertiary">Loading styles...</div>
       </div>
     );
   }
@@ -48,26 +47,26 @@ export default function StyleSelector({
   if (error) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="text-red-500">{error}</div>
+        <div className="text-swag-pink">{error}</div>
       </div>
     );
   }
 
   return (
     <div className="flex flex-col h-full">
-      <h2 className="text-lg font-semibold mb-4 text-gray-800">Select Style</h2>
+      <h2 className="panel-heading">Select Style</h2>
 
-      <div className="flex-1 space-y-3 overflow-y-auto">
+      <div className="flex-1 space-y-2 overflow-y-auto">
         {styles.map((style) => (
           <div
             key={style.id}
             onClick={() => onStyleSelect(style.id)}
             className={`
-              p-4 rounded-lg border-2 cursor-pointer transition-all
+              p-3 border cursor-pointer transition-all
               ${
                 selectedStyleId === style.id
-                  ? 'border-blue-500 bg-blue-50'
-                  : 'border-gray-200 bg-white hover:border-gray-300'
+                  ? 'border-swag-green bg-swag-green/10'
+                  : 'border-swag-border bg-surface-2 hover:border-swag-border-strong'
               }
             `}
           >
@@ -76,28 +75,17 @@ export default function StyleSelector({
                 type="radio"
                 checked={selectedStyleId === style.id}
                 onChange={() => onStyleSelect(style.id)}
-                className="mt-1 mr-3"
+                className="mt-1 mr-3 accent-swag-green"
               />
               <div className="flex-1">
-                <h3 className="font-semibold text-gray-900">{style.name}</h3>
-                <p className="text-sm text-gray-600 mt-1">{style.description}</p>
+                <h3 className="font-semibold text-swag-white">{style.name}</h3>
+                <p className="text-sm text-swag-text-secondary mt-1">{style.description}</p>
               </div>
             </div>
           </div>
         ))}
       </div>
 
-      <div className="mt-4 pt-4 border-t border-gray-200">
-        <label className="flex items-center cursor-pointer">
-          <input
-            type="checkbox"
-            checked={experimentalMode}
-            onChange={(e) => onExperimentalToggle(e.target.checked)}
-            className="mr-2"
-          />
-          <span className="text-sm text-gray-700">Experimental Mode</span>
-        </label>
-      </div>
     </div>
   );
 }

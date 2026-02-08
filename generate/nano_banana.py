@@ -5,7 +5,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from .adapter import ImageModelAdapter
 from .types import GenerationPayload, GenerationConfig
-from .utils import create_blank_sketch, get_timestamp, create_output_directory
+from .utils import create_blank_sketch, get_timestamp, create_output_directory, convert_to_grayscale
 from .nano_banana_client import NanaBananaClient
 
 
@@ -121,15 +121,20 @@ class NanaBananaAdapter(ImageModelAdapter):
                     seed=config.seed
                 )
 
-                # Save images
+                # Save images (with optional grayscale conversion)
                 generated_paths = []
                 for i, image_data in enumerate(image_data_list):
+                    # Apply grayscale conversion if enabled
+                    if config.enforce_grayscale:
+                        image_data = convert_to_grayscale(image_data)
+
                     output_path = Path(output_dir) / f"sketch_{i}.png"
                     with open(output_path, 'wb') as f:
                         f.write(image_data)
                     generated_paths.append(str(output_path.absolute()))
 
-                print(f"✓ Generated {len(generated_paths)} images")
+                grayscale_msg = " (converted to grayscale)" if config.enforce_grayscale else ""
+                print(f"✓ Generated {len(generated_paths)} images{grayscale_msg}")
                 return generated_paths
 
             except Exception as e:

@@ -10,7 +10,7 @@ const mockService = new MockGenerationService();
 
 router.post('/generate', async (req, res) => {
   try {
-    const { input, styleId, numImages, experimentalMode } = req.body as GenerateRequest;
+    const { input, styleId, numImages, experimentalMode, sessionId } = req.body as GenerateRequest;
 
     // Validate required fields
     if (!input || !styleId) {
@@ -41,7 +41,7 @@ router.post('/generate', async (req, res) => {
       try {
         const response = await fetchFromPython<GenerateResponse>('/generate', {
           method: 'POST',
-          body: JSON.stringify({ input, styleId, numImages: numImages || 4, experimentalMode })
+          body: JSON.stringify({ input, styleId, numImages: numImages || 4, experimentalMode, sessionId })
         });
         return res.json(response);
       } catch (pythonError) {
