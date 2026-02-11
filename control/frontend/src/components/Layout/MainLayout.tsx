@@ -108,8 +108,8 @@ export default function MainLayout() {
   return (
     <div className="flex flex-col h-screen bg-surface-0">
       {/* Header */}
-      <header className="bg-surface-0 border-b border-swag-border-subtle px-6 py-3">
-        <h1 className="font-display text-2xl text-swag-green uppercase tracking-widest">
+      <header className="bg-surface-0 border-b-2 border-swag-green px-6 py-4">
+        <h1 className="font-display text-3xl text-swag-green uppercase tracking-widest">
           SWAG Concept Sketch Agent
         </h1>
         <p className="text-sm text-swag-text-tertiary mt-0.5 font-body">
@@ -121,7 +121,7 @@ export default function MainLayout() {
       <main className="flex-1 grid grid-cols-[25%_25%_50%] gap-3 p-3 overflow-hidden">
         {/* Left Panel - StyleSelector (top) + StyleManager (bottom) */}
         <aside className="panel">
-          <div className="flex-1 min-h-0 overflow-hidden flex flex-col border-b border-swag-border pb-4 mb-4">
+          <div className="flex-1 min-h-0 overflow-hidden flex flex-col pb-4 mb-4">
             <StyleSelector
               selectedStyleId={selectedStyleId}
               onStyleSelect={handleStyleSelect}
@@ -139,7 +139,7 @@ export default function MainLayout() {
 
         {/* Center Panel - ChatInput (top) + UserFeedbackInput (bottom) */}
         <section className="panel">
-          <div className="flex-1 min-h-0 overflow-hidden flex flex-col border-b border-swag-border pb-4 mb-4">
+          <div className="flex-1 min-h-0 overflow-hidden flex flex-col pb-4 mb-4">
             <ChatInput
               onGenerate={handleGenerate}
               isGenerating={isGenerating}

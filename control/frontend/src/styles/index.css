@@ -36,7 +36,7 @@
   }
   ::-webkit-scrollbar-thumb {
     background: #333333;
-    border-radius: 3px;
+    border-radius: 6px;
   }
   ::-webkit-scrollbar-thumb:hover {
     background: #555555;
@@ -46,40 +46,51 @@
 @layer components {
   .btn-primary {
     @apply bg-swag-green text-black font-bold uppercase tracking-wider
-           px-6 py-3 transition-all
-           hover:bg-swag-green-muted hover:shadow-glow-green
-           active:bg-swag-green-dark
-           disabled:bg-surface-4 disabled:text-swag-text-quaternary disabled:cursor-not-allowed disabled:shadow-none;
+           px-6 py-3 rounded-btn transition-all
+           hover:bg-swag-green-muted hover:shadow-glow-green hover:scale-[1.02]
+           active:bg-swag-green-dark active:scale-100
+           disabled:bg-surface-4 disabled:text-swag-text-quaternary disabled:cursor-not-allowed disabled:shadow-none disabled:hover:scale-100;
   }
 
   .btn-secondary {
-    @apply bg-surface-2 text-swag-white border border-swag-border
-           font-semibold px-4 py-2 transition-all
-           hover:bg-surface-3 hover:border-swag-border-strong
-           active:bg-surface-4
-           disabled:bg-surface-1 disabled:text-swag-text-quaternary disabled:border-swag-border-subtle disabled:cursor-not-allowed;
+    @apply bg-transparent text-swag-green border border-swag-green
+           font-semibold px-4 py-2 rounded-btn transition-all
+           hover:bg-swag-green/10 hover:shadow-glow-green
+           active:bg-swag-green/20
+           disabled:bg-transparent disabled:text-swag-text-quaternary disabled:border-swag-border-subtle disabled:cursor-not-allowed disabled:shadow-none;
   }
 
   .btn-danger {
     @apply bg-swag-pink text-white font-bold uppercase tracking-wider
-           px-4 py-2 transition-all
-           hover:bg-swag-pink-hover hover:shadow-glow-pink
-           disabled:bg-surface-4 disabled:text-swag-text-quaternary disabled:cursor-not-allowed disabled:shadow-none;
+           px-4 py-2 rounded-btn transition-all
+           hover:bg-swag-pink-hover hover:shadow-glow-pink hover:scale-[1.02]
+           active:scale-100
+           disabled:bg-surface-4 disabled:text-swag-text-quaternary disabled:cursor-not-allowed disabled:shadow-none disabled:hover:scale-100;
   }
 
   .input-dark {
     @apply bg-surface-2 border border-swag-border text-swag-white
-           px-4 py-3 placeholder-swag-text-quaternary
+           px-4 py-3 rounded-input placeholder-swag-text-quaternary
            focus:outline-none focus:border-swag-border-focus focus:ring-1 focus:ring-swag-green
            transition-colors;
   }
 
   .panel {
-    @apply bg-surface-1 border border-swag-border-subtle p-5
+    @apply bg-surface-1 p-5 rounded-panel
            overflow-hidden flex flex-col;
   }
 
   .panel-heading {
-    @apply font-display text-xl uppercase tracking-wider text-swag-white mb-4;
+    @apply font-display text-2xl uppercase tracking-wider text-swag-white mb-4;
+  }
+
+  .tag-green {
+    @apply inline-block bg-swag-green/20 text-swag-green text-xs font-bold uppercase
+           tracking-wider px-3 py-1 rounded-tag;
+  }
+
+  .tag-pink {
+    @apply inline-block bg-swag-pink/20 text-swag-pink text-xs font-bold uppercase
+           tracking-wider px-3 py-1 rounded-tag;
   }
 }

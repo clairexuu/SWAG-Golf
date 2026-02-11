@@ -111,8 +111,8 @@ export default function SketchGrid({ sketches, isGenerating, error }: SketchGrid
         {sketches.map((sketch, index) => {
           const imageNum = index + 1;
           return (
-            <div key={sketch.id} className="flex flex-col bg-surface-2 overflow-hidden border border-swag-border">
-              <div className="relative flex-1 min-h-[200px] bg-surface-0 flex items-center justify-center p-2">
+            <div key={sketch.id} className="flex flex-col bg-surface-2 overflow-hidden border border-swag-border rounded-card transition-transform hover:scale-[1.02] hover:shadow-card-hover">
+              <div className="relative flex-1 min-h-[200px] bg-surface-0 flex items-center justify-center p-2 rounded-img">
                 <img
                   src={getImageUrl(sketch.imagePath)}
                   alt={`Sketch ${imageNum}`}

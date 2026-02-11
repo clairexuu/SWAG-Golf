@@ -133,10 +133,10 @@ export default function StyleManager({
 
       {/* Status messages */}
       {error && (
-        <div className="mb-3 text-sm text-swag-pink">{error}</div>
+        <div className="mb-3"><span className="tag-pink">{error}</span></div>
       )}
       {success && (
-        <div className="mb-3 text-sm text-swag-green">{success}</div>
+        <div className="mb-3"><span className="tag-green">{success}</span></div>
       )}
 
       {/* Action buttons */}

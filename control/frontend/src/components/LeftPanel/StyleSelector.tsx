@@ -62,7 +62,8 @@ export default function StyleSelector({
             key={style.id}
             onClick={() => onStyleSelect(style.id)}
             className={`
-              p-3 border cursor-pointer transition-all
+              p-3 border rounded-card cursor-pointer transition-all
+              hover:scale-[1.01] hover:shadow-card-hover
               ${
                 selectedStyleId === style.id
                   ? 'border-swag-green bg-swag-green/10'
