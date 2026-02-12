@@ -62,7 +62,7 @@ def list_generations(
                 "images": images,
             })
 
-        # Cap at 100 most recent generations
+        # Cap at 100 most recent generations (per-style when filtered, global otherwise)
         generations = generations[:100]
         total = len(generations)
 

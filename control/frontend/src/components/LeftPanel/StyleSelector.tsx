@@ -1,6 +1,4 @@
-import { useEffect, useState } from 'react';
-import { getStyles } from '../../services/api';
-import type { Style } from '../../types';
+import { useStyleContext } from '../../context/StyleContext';
 import { SkeletonStyleCard } from '../shared/Skeleton';
 import EmptyState from '../shared/EmptyState';
 import { PlusIcon } from '../shared/Icons';
@@ -8,49 +6,20 @@ import { PlusIcon } from '../shared/Icons';
 interface StyleSelectorProps {
   selectedStyleId: string | null;
   onStyleSelect: (styleId: string) => void;
-  refreshKey?: number;
 }
 
 export default function StyleSelector({
   selectedStyleId,
   onStyleSelect,
-  refreshKey = 0,
 }: StyleSelectorProps) {
-  const [styles, setStyles] = useState<Style[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { styles, stylesLoading } = useStyleContext();
 
-  useEffect(() => {
-    async function fetchStyles() {
-      try {
-        setLoading(true);
-        const fetchedStyles = await getStyles();
-        setStyles(fetchedStyles);
-      } catch (err) {
-        console.error('Failed to fetch styles:', err);
-        setError('Failed to load styles');
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchStyles();
-  }, [refreshKey]);
-
-  if (loading) {
+  if (stylesLoading) {
     return (
       <div className="space-y-3">
         <SkeletonStyleCard />
         <SkeletonStyleCard />
         <SkeletonStyleCard />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex items-center justify-center h-32">
-        <div className="text-swag-pink text-sm">{error}</div>
       </div>
     );
   }

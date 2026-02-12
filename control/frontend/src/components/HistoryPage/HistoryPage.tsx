@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useHistory } from '../../hooks/useHistory';
 import StyleGroupSection from './StyleGroupSection';
 import HistoryLightbox from './HistoryLightbox';
@@ -7,11 +8,7 @@ import { SkeletonCard } from '../shared/Skeleton';
 import { ArrowLeftIcon, ImagePlaceholderIcon } from '../shared/Icons';
 import type { GenerationSummary } from '../../types';
 
-interface HistoryPageProps {
-  onBackToWorkspace: () => void;
-}
-
-export default function HistoryPage({ onBackToWorkspace }: HistoryPageProps) {
+export default function HistoryPage() {
   const { styleGroups, loading, error, totalCount } = useHistory();
   const [lightbox, setLightbox] = useState<{
     generation: GenerationSummary;
@@ -49,10 +46,10 @@ export default function HistoryPage({ onBackToWorkspace }: HistoryPageProps) {
     return (
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="history-header">
-          <button onClick={onBackToWorkspace} className="btn-ghost flex items-center gap-2">
+          <Link to="/" className="btn-ghost flex items-center gap-2">
             <ArrowLeftIcon className="w-4 h-4" />
             Back to Studio
-          </button>
+          </Link>
         </div>
         <EmptyState
           icon={<ImagePlaceholderIcon className="w-16 h-16 text-swag-pink" />}
@@ -68,10 +65,10 @@ export default function HistoryPage({ onBackToWorkspace }: HistoryPageProps) {
     return (
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="history-header">
-          <button onClick={onBackToWorkspace} className="btn-ghost flex items-center gap-2">
+          <Link to="/" className="btn-ghost flex items-center gap-2">
             <ArrowLeftIcon className="w-4 h-4" />
             Back to Studio
-          </button>
+          </Link>
         </div>
         <EmptyState
           icon={<ImagePlaceholderIcon className="w-16 h-16 text-swag-text-quaternary" />}
@@ -87,10 +84,10 @@ export default function HistoryPage({ onBackToWorkspace }: HistoryPageProps) {
       {/* Page header */}
       <div className="history-header">
         <div className="flex items-center gap-4">
-          <button onClick={onBackToWorkspace} className="btn-ghost flex items-center gap-2 -ml-3">
+          <Link to="/" className="btn-ghost flex items-center gap-2 -ml-3">
             <ArrowLeftIcon className="w-4 h-4" />
             Studio
-          </button>
+          </Link>
           <div className="w-px h-6 bg-swag-border" />
           <h1 className="font-display text-3xl uppercase tracking-wider text-swag-white">
             Archive

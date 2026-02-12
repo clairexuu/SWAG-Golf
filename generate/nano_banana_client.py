@@ -5,6 +5,7 @@ Renamed from nano_banana_client.py but kept the class name for backwards compati
 import os
 import time
 import base64
+from io import BytesIO
 from typing import List, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from google import genai
@@ -103,14 +104,20 @@ IMPORTANT OUTPUT REQUIREMENTS:
 - OUTPUT MUST BE BLACK AND WHITE / GRAYSCALE ONLY - NO COLOR
 """
 
+        # Pre-load reference image bytes once (avoid redundant disk reads per thread)
+        ref_image_bytes = []
+        for p in valid_ref_paths:
+            with open(p, 'rb') as f:
+                ref_image_bytes.append(f.read())
+
         # Generate all images in parallel using threads
-        # Each thread loads its own PIL Image copies to avoid thread-safety issues
+        # Each thread creates its own PIL Image from pre-loaded bytes (thread-safe)
         print(f"Generating {num_images} images in parallel...")
         with ThreadPoolExecutor(max_workers=num_images) as executor:
             futures = {
                 executor.submit(
                     self._generate_single_image,
-                    enhanced_prompt, valid_ref_paths, resolution, aspect_ratio, temperature, i
+                    enhanced_prompt, ref_image_bytes, resolution, aspect_ratio, temperature, i
                 ): i
                 for i in range(num_images)
             }
@@ -124,7 +131,7 @@ IMPORTANT OUTPUT REQUIREMENTS:
     def _generate_single_image(
         self,
         enhanced_prompt: str,
-        ref_image_paths: List[str],
+        ref_image_bytes: List[bytes],
         resolution: tuple,
         aspect_ratio: str,
         temperature: float,
@@ -133,12 +140,12 @@ IMPORTANT OUTPUT REQUIREMENTS:
         """
         Generate a single image via the Gemini API.
 
-        Each thread loads its own PIL Image objects to avoid thread-safety issues
-        with shared PIL Images (which use lazy file-handle-based loading).
+        Each thread creates its own PIL Image objects from pre-loaded bytes
+        to avoid thread-safety issues with shared PIL Images.
 
         Args:
             enhanced_prompt: The formatted prompt string
-            ref_image_paths: List of reference image file paths
+            ref_image_bytes: List of reference image data as bytes (pre-loaded)
             resolution: (width, height) for placeholder fallback
             aspect_ratio: Gemini aspect ratio preset
             temperature: Generation temperature
@@ -150,8 +157,8 @@ IMPORTANT OUTPUT REQUIREMENTS:
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                # Load reference images independently per thread
-                ref_parts = [Image.open(p) for p in ref_image_paths]
+                # Create PIL Images from pre-loaded bytes (thread-safe)
+                ref_parts = [Image.open(BytesIO(b)) for b in ref_image_bytes]
                 contents = [enhanced_prompt] + ref_parts
 
                 response = self.client.models.generate_content(

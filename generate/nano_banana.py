@@ -121,17 +121,25 @@ class NanaBananaAdapter(ImageModelAdapter):
                     seed=config.seed
                 )
 
-                # Save images (with optional grayscale conversion)
-                generated_paths = []
-                for i, image_data in enumerate(image_data_list):
-                    # Apply grayscale conversion if enabled
+                # Save images (with optional grayscale conversion) in parallel
+                def _process_and_save(i, data):
                     if config.enforce_grayscale:
-                        image_data = convert_to_grayscale(image_data)
+                        data = convert_to_grayscale(data)
+                    out = Path(output_dir) / f"sketch_{i}.png"
+                    with open(out, 'wb') as f:
+                        f.write(data)
+                    return str(out.absolute())
 
-                    output_path = Path(output_dir) / f"sketch_{i}.png"
-                    with open(output_path, 'wb') as f:
-                        f.write(image_data)
-                    generated_paths.append(str(output_path.absolute()))
+                from concurrent.futures import ThreadPoolExecutor, as_completed
+                with ThreadPoolExecutor(max_workers=len(image_data_list)) as pool:
+                    futures = {
+                        pool.submit(_process_and_save, i, data): i
+                        for i, data in enumerate(image_data_list)
+                    }
+                    generated_paths = [None] * len(image_data_list)
+                    for future in as_completed(futures):
+                        idx = futures[future]
+                        generated_paths[idx] = future.result()
 
                 grayscale_msg = " (converted to grayscale)" if config.enforce_grayscale else ""
                 print(f"✓ Generated {len(generated_paths)} images{grayscale_msg}")

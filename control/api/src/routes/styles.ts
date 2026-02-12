@@ -182,6 +182,35 @@ router.post('/styles/:styleId/images', async (req, res) => {
   }
 });
 
+router.put('/styles/:styleId', async (req, res) => {
+  const { styleId } = req.params;
+  try {
+    const pythonHealthy = await checkPythonHealth();
+    if (!pythonHealthy) {
+      return res.status(503).json({
+        success: false,
+        error: 'Python backend is unavailable'
+      });
+    }
+
+    const response = await fetchFromPython<{ success: boolean; style: any }>(
+      `/styles/${styleId}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(req.body),
+      }
+    );
+    return res.json(response);
+  } catch (error: any) {
+    console.error(`Error updating style ${styleId}:`, error);
+    const status = error.message?.includes('404') ? 404 : 500;
+    res.status(status).json({
+      success: false,
+      error: error.message || 'Failed to update style'
+    });
+  }
+});
+
 router.delete('/styles/:styleId', async (req, res) => {
   const { styleId } = req.params;
   try {

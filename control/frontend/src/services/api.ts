@@ -41,6 +41,14 @@ export async function addImagesToStyle(styleId: string, formData: FormData): Pro
   return response.data;
 }
 
+export async function updateStyle(
+  styleId: string,
+  updates: { name?: string; description?: string; visual_rules?: Record<string, string> }
+): Promise<{ success: boolean }> {
+  const response = await apiClient.put(`/styles/${styleId}`, updates);
+  return response.data;
+}
+
 export async function deleteStyle(styleId: string): Promise<{ success: boolean }> {
   const response = await apiClient.delete(`/styles/${styleId}`);
   return response.data;

@@ -201,6 +201,19 @@ class PipelineService:
 
         return deleted_count
 
+    def update_style(self, style_id: str, updates: Dict[str, Any]) -> Style:
+        """
+        Update style metadata (name, description, visual_rules) and return the updated Style.
+        """
+        self._initialize()
+
+        update_style_json(style_id, updates)
+
+        # Clear registry cache so next load picks up changes
+        self.style_registry._cache.pop(style_id, None)
+
+        return self.style_registry.get_style(style_id)
+
     def generate(
         self,
         user_input: str,

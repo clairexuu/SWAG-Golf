@@ -11,7 +11,7 @@ const mockService = new MockGenerationService();
 router.post('/generate', async (req, res) => {
   // Abort Python fetch if client disconnects (user cancelled)
   const abortController = new AbortController();
-  req.on('close', () => {
+  res.on('close', () => {
     if (!res.writableEnded) {
       abortController.abort();
     }

@@ -14,6 +14,12 @@ from api.services.pipeline import PipelineService
 from api.utils.case_converter import convert_keys_to_camel
 
 
+class UpdateStyleRequest(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    visual_rules: Optional[dict] = None
+
+
 class DeleteImagesRequest(BaseModel):
     filenames: List[str]
 
@@ -155,6 +161,46 @@ async def add_images_to_style(style_id: str, images: List[UploadFile] = File(...
     finally:
         if tmp_dir and tmp_dir.exists():
             shutil.rmtree(str(tmp_dir), ignore_errors=True)
+
+
+@router.put("/styles/{style_id}")
+def update_style(style_id: str, request: UpdateStyleRequest):
+    """
+    Update style metadata (name, description, visual_rules).
+    """
+    try:
+        service = PipelineService()
+
+        updates = {}
+        if request.name is not None:
+            updates["name"] = request.name
+        if request.description is not None:
+            updates["description"] = request.description
+        if request.visual_rules is not None:
+            updates["visual_rules"] = request.visual_rules
+
+        if not updates:
+            raise HTTPException(status_code=400, detail="No fields to update")
+
+        style = service.update_style(style_id, updates)
+
+        style_dict = {
+            "id": style.id,
+            "name": style.name,
+            "description": style.description,
+            "visual_rules": style.visual_rules,
+            "reference_images": [os.path.basename(p) for p in style.reference_images],
+            "do_not_use": [],
+        }
+
+        return {"success": True, "style": convert_keys_to_camel(style_dict)}
+
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.delete("/styles/{style_id}")

@@ -5,8 +5,8 @@ import json
 import shutil
 from pathlib import Path
 
-LOGS_DIR = Path("feedback/logs/conversations")
-STYLE_LIBRARY = Path("style/style_library")
+LOGS_DIR = Path("../feedback/logs/conversations")
+STYLE_LIBRARY = Path("../style/style_library")
 
 
 def clear_logs():

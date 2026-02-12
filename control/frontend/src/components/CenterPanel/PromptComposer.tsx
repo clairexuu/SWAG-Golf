@@ -9,7 +9,7 @@ interface PromptComposerProps {
   hasSketches: boolean;
 }
 
-type Mode = 'concept' | 'refine';
+type Mode = 'concept' | 'feedback';
 
 export default function PromptComposer({
   onGenerate,
@@ -51,9 +51,9 @@ export default function PromptComposer({
   const placeholder =
     mode === 'concept'
       ? 'Describe your concept sketch idea...\n\nExample: playful golf ball character with cartoonish features'
-      : 'Describe how to refine these sketches...\n\nExample: make the lines thicker and add more detail to the eyes';
+      : 'Write feedback on the generated images here. Your feedback will be applied to all future generations of the current style.\n\nExample: make the lines thicker and add more detail to the eyes';
 
-  const buttonLabel = mode === 'concept' ? 'Generate' : 'Refine';
+  const buttonLabel = mode === 'concept' ? 'Generate' : 'Submit';
 
   return (
     <div className="flex-shrink-0 p-4">
@@ -72,10 +72,10 @@ export default function PromptComposer({
             New Concept
           </button>
           <button
-            onClick={() => hasSketches && setMode('refine')}
+            onClick={() => hasSketches && setMode('feedback')}
             disabled={!hasSketches}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-btn text-xs font-semibold uppercase tracking-wider transition-all ${
-              mode === 'refine'
+              mode === 'feedback'
                 ? 'bg-swag-teal/15 text-swag-teal'
                 : hasSketches
                   ? 'text-swag-text-quaternary hover:text-swag-text-secondary'
@@ -83,7 +83,7 @@ export default function PromptComposer({
             }`}
           >
             <FeedbackIcon className="w-3.5 h-3.5" />
-            Refine
+            Feedback
           </button>
         </div>
 

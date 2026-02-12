@@ -4,23 +4,24 @@
 
 ## In @style/
 - No "Do Not Use" image references yet
-**- add a page to show all images in a styles**
 
 ## In @RAG
 
-## In @generate
-**- Do we keep all generated image on disk or do we want to clear them once a while?**
-**- add a page to show all past generations by styles**
+## In @generate                                    
 - Implement Approach 3: Improved In-Context Guidance in @proposal.md
 
 - nano banana generation 
     - Currently enforced 9:16 portrait images, another choice is to follow the layout of the images in style
+    - conver to grayscale after generation to ensure sketch style
 
 - TEST PROMPT: 
 
     - anime style baseball player, overlooking los angeles, with a burst of energy coming from behind him.
 
     - Muscular / Athletic baseball player with baseball bat in his right hand, resting behind his neck on his shoulder. HIs left hand is tossing up a baseball casually like he’s ready to play ball. Have a anime style to it - and have smoke coming from his eyes. 
+
+- TIME:
+    - generation takes about 25 seconds
 
 ## In @feedback
 

@@ -1,6 +1,8 @@
 """Generate endpoint - runs the full generation pipeline."""
 
+import json
 import os
+import shutil
 from pathlib import Path
 from typing import Optional
 
@@ -8,6 +10,9 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from api.services.pipeline import PipelineService
+
+MAX_GENERATIONS_PER_STYLE = 100
+GENERATED_DIR = Path("generated_outputs")
 
 router = APIRouter()
 
@@ -19,6 +24,32 @@ class GenerateRequest(BaseModel):
     numImages: Optional[int] = 4
     experimentalMode: Optional[bool] = False
     sessionId: Optional[str] = None
+
+
+def _prune_generations(style_id: str):
+    """Delete oldest generation folders for a style beyond MAX_GENERATIONS_PER_STYLE."""
+    if not GENERATED_DIR.exists():
+        return
+
+    # Collect all generation dirs belonging to this style
+    style_dirs = []
+    for entry in sorted(GENERATED_DIR.iterdir(), reverse=True):
+        if not entry.is_dir():
+            continue
+        metadata_path = entry / "metadata.json"
+        if not metadata_path.exists():
+            continue
+        try:
+            with open(metadata_path, "r") as f:
+                meta = json.load(f)
+            if meta.get("style", {}).get("id") == style_id:
+                style_dirs.append(entry)
+        except (json.JSONDecodeError, IOError):
+            continue
+
+    # Remove excess (already sorted newest-first)
+    for old_dir in style_dirs[MAX_GENERATIONS_PER_STYLE:]:
+        shutil.rmtree(old_dir, ignore_errors=True)
 
 
 @router.post("/generate")
@@ -91,6 +122,9 @@ def generate_sketches(request: GenerateRequest):
                 }
             }
         }
+
+        # Prune old generations for this style to keep only the most recent 100
+        _prune_generations(request.styleId)
 
         return response
 
