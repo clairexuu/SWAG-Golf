@@ -1,6 +1,6 @@
 # generate/adapter.py
 from abc import ABC, abstractmethod
-from typing import List
+from typing import List, Optional, Tuple
 from .types import GenerationPayload, GenerationConfig
 from prompt.schema import PromptSpec
 
@@ -12,15 +12,17 @@ class ImageModelAdapter(ABC):
     """
 
     @abstractmethod
-    def generate(self, payload: GenerationPayload) -> List[str]:
+    def generate(self, payload: GenerationPayload) -> Tuple[List[Optional[str]], List[Optional[str]]]:
         """
-        Generate images and return list of file paths.
+        Generate images and return paths and per-image errors.
 
         Args:
             payload: GenerationPayload containing prompt, references, and config
 
         Returns:
-            List of absolute paths to generated images
+            Tuple of (image_paths, image_errors). For each index:
+              - Success: paths[i] = absolute file path, errors[i] = None
+              - Failure: paths[i] = None, errors[i] = error message
         """
         pass
 

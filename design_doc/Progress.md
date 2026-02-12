@@ -27,8 +27,7 @@
 
 ## In @control/
 - USE /plugin install ui-designer@daymade-claude-code-skills
-- Need **error log** on the frontend when anything fails, such as python connection error
-    instead of falling to placeholder, we should show what's wrong in the error log and maybe suggest a fix
+- TEST **error log** 
 
 ## In @design_doc
 

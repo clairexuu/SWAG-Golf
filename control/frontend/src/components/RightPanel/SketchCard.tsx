@@ -1,5 +1,5 @@
 import type { Sketch } from '../../types';
-import { DownloadIcon, ExpandIcon } from '../shared/Icons';
+import { DownloadIcon, ExpandIcon, ErrorCircleIcon } from '../shared/Icons';
 
 const API_BASE_URL = 'http://localhost:3001/api';
 const getImageUrl = (imagePath: string) => `${API_BASE_URL}${imagePath}`;
@@ -11,12 +11,25 @@ interface SketchCardProps {
 }
 
 export default function SketchCard({ sketch, onExpand, onDownload }: SketchCardProps) {
+  // Error state — show error message instead of image
+  if (sketch.error) {
+    return (
+      <div className="sketch-card h-full aspect-[9/16] flex flex-col items-center justify-center gap-3 p-4 bg-surface-2 border border-red-500/30">
+        <ErrorCircleIcon className="w-8 h-8 text-red-400 flex-shrink-0" />
+        <p className="text-xs font-medium text-red-400 uppercase tracking-wider">Generation Failed</p>
+        <p className="text-xs text-swag-text-tertiary text-center overflow-y-auto max-h-32 leading-relaxed">
+          {sketch.error}
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="sketch-card group cursor-pointer h-full aspect-[9/16]" onClick={onExpand}>
       {/* Image container */}
       <div className="h-full">
         <img
-          src={getImageUrl(sketch.imagePath)}
+          src={sketch.imagePath ? getImageUrl(sketch.imagePath) : ''}
           alt={sketch.id}
           className="w-full h-full object-cover"
         />

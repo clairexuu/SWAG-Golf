@@ -61,7 +61,7 @@ class ImageGenerator:
         )
 
         # Generate images via adapter
-        image_paths = self.adapter.generate(payload)
+        image_paths, image_errors = self.adapter.generate(payload)
 
         # Get timestamp for this generation
         timestamp = get_timestamp()
@@ -72,6 +72,7 @@ class ImageGenerator:
         # Create GenerationResult
         result = GenerationResult(
             images=image_paths,
+            image_errors=image_errors,
             metadata_path="",  # Will be set after saving metadata
             timestamp=timestamp,
             prompt_spec=prompt_spec,
@@ -80,10 +81,11 @@ class ImageGenerator:
         )
 
         # Save metadata
-        # Extract output directory from first image path
-        if image_paths:
+        # Extract output directory from first successful image path
+        successful_paths = [p for p in image_paths if p is not None]
+        if successful_paths:
             import os
-            output_dir = os.path.dirname(image_paths[0])
+            output_dir = os.path.dirname(successful_paths[0])
 
             # Prepare metadata dictionary
             metadata_dict = {
@@ -105,7 +107,8 @@ class ImageGenerator:
                     "aspect_ratio": config.aspect_ratio,
                     "image_size": config.image_size
                 },
-                "images": [os.path.basename(p) for p in image_paths]  # Just filenames
+                "images": [os.path.basename(p) for p in successful_paths],
+                "image_errors": [e for e in image_errors if e is not None]
             }
 
             # Save metadata

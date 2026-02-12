@@ -13,8 +13,9 @@ export interface GenerateRequest {
 
 export interface Sketch {
   id: string;
-  imagePath: string;
+  imagePath: string | null;
   resolution: [number, number];
+  error?: string;
   metadata: {
     promptSpec: PromptSpec;
     referenceImages: string[];

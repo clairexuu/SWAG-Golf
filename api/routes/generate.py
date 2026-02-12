@@ -85,14 +85,8 @@ def generate_sketches(request: GenerateRequest):
         # Build response matching TypeScript interface
         sketches = []
         for i, image_path in enumerate(result.images):
-            # Extract just the filename from the path
-            # Images are saved in generated_outputs/{timestamp}/sketch_N.png
-            # We serve them at /generated/{timestamp}/sketch_N.png
-            rel_path = Path(image_path).relative_to(Path("generated_outputs").resolve())
-
-            sketches.append({
+            sketch = {
                 "id": f"sketch_{i}",
-                "imagePath": f"/generated/{rel_path}",
                 "resolution": list(result.config.resolution),
                 "metadata": {
                     "promptSpec": {
@@ -103,7 +97,18 @@ def generate_sketches(request: GenerateRequest):
                     "referenceImages": [img.path for img in retrieval_result.images],
                     "retrievalScores": retrieval_result.scores
                 }
-            })
+            }
+
+            if image_path is not None:
+                # Successful image — include path
+                rel_path = Path(image_path).relative_to(Path("generated_outputs").resolve())
+                sketch["imagePath"] = f"/generated/{rel_path}"
+            else:
+                # Failed image — include error message
+                sketch["imagePath"] = None
+                sketch["error"] = result.image_errors[i] if i < len(result.image_errors) else "Unknown error"
+
+            sketches.append(sketch)
 
         response = {
             "success": True,

@@ -22,7 +22,8 @@ class GenerationConfig:
 @dataclass
 class GenerationResult:
     """Result of image generation containing paths and metadata"""
-    images: List[str]  # Paths to generated images
+    images: List[Optional[str]]  # Paths to generated images (None for failed)
+    image_errors: List[Optional[str]]  # Per-image error messages (None for success)
     metadata_path: str  # Path to metadata JSON
     timestamp: str  # Generation timestamp
     prompt_spec: PromptSpec  # From prompt/schema.py
@@ -33,6 +34,7 @@ class GenerationResult:
         """Convert to dictionary for serialization"""
         return {
             "images": self.images,
+            "image_errors": self.image_errors,
             "metadata_path": self.metadata_path,
             "timestamp": self.timestamp,
             "prompt_spec": self.prompt_spec.to_dict(),

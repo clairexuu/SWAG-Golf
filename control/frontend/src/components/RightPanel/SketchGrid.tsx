@@ -18,6 +18,7 @@ interface SketchGridProps {
 
 export default function SketchGrid({ sketches, isGenerating, error, onImageClick, onCancel }: SketchGridProps) {
   const handleDownload = async (sketch: Sketch) => {
+    if (!sketch.imagePath) return;
     const imageUrl = getImageUrl(sketch.imagePath);
     try {
       const response = await fetch(imageUrl);
@@ -38,9 +39,9 @@ export default function SketchGrid({ sketches, isGenerating, error, onImageClick
   const handleDownloadAll = async () => {
     const zip = new JSZip();
     await Promise.all(
-      sketches.map(async (sketch, i) => {
+      sketches.filter(s => s.imagePath).map(async (sketch, i) => {
         try {
-          const response = await fetch(getImageUrl(sketch.imagePath));
+          const response = await fetch(getImageUrl(sketch.imagePath!));
           const blob = await response.blob();
           zip.file(`sketch_${i + 1}.png`, blob);
         } catch (err) {

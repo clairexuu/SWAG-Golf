@@ -6,7 +6,7 @@ import os
 import time
 import base64
 from io import BytesIO
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from google import genai
 from google.genai import types
@@ -63,7 +63,7 @@ class NanaBananaClient:
         image_size: str = "2K",
         seed: Optional[int] = None,
         temperature: float = 0.8
-    ) -> List[bytes]:
+    ) -> Tuple[List[Optional[bytes]], List[Optional[str]]]:
         """
         Generate sketch images using Google Gemini 2.5 Flash Image model.
 
@@ -71,17 +71,16 @@ class NanaBananaClient:
             prompt: Text prompt for generation
             reference_images: List of reference image paths
             num_images: Number of images to generate
-            resolution: (width, height) tuple (used for placeholder images)
+            resolution: (width, height) tuple
             aspect_ratio: Gemini aspect ratio preset ("1:1", "9:16", "16:9", etc.)
             image_size: Gemini image size preset ("1K", "2K", "4K")
             seed: Random seed for reproducibility (note: Gemini doesn't support seeds directly)
             temperature: Controls creativity (0.0-2.0). Lower = more deterministic, higher = more creative. Default 0.8
 
         Returns:
-            List of image data as bytes
-
-        Raises:
-            Exception: If API request fails
+            Tuple of (image_data_list, errors_list). For each index:
+              - Success: image_data_list[i] = bytes, errors_list[i] = None
+              - Failure: image_data_list[i] = None, errors_list[i] = error message string
         """
         # Filter to valid reference image paths (limit to 5)
         valid_ref_paths = []
@@ -117,22 +116,26 @@ IMPORTANT OUTPUT REQUIREMENTS:
             futures = {
                 executor.submit(
                     self._generate_single_image,
-                    enhanced_prompt, ref_image_bytes, resolution, aspect_ratio, temperature, i
+                    enhanced_prompt, ref_image_bytes, aspect_ratio, temperature, i
                 ): i
                 for i in range(num_images)
             }
             results = [None] * num_images
+            errors = [None] * num_images
             for future in as_completed(futures):
                 idx = futures[future]
-                results[idx] = future.result()
+                try:
+                    results[idx] = future.result()
+                except Exception as e:
+                    errors[idx] = str(e)
+                    print(f"Image {idx+1} failed: {e}")
 
-        return results
+        return results, errors
 
     def _generate_single_image(
         self,
         enhanced_prompt: str,
         ref_image_bytes: List[bytes],
-        resolution: tuple,
         aspect_ratio: str,
         temperature: float,
         index: int
@@ -146,13 +149,15 @@ IMPORTANT OUTPUT REQUIREMENTS:
         Args:
             enhanced_prompt: The formatted prompt string
             ref_image_bytes: List of reference image data as bytes (pre-loaded)
-            resolution: (width, height) for placeholder fallback
             aspect_ratio: Gemini aspect ratio preset
             temperature: Generation temperature
             index: Image index (0-based, used for logging)
 
         Returns:
             Image data as bytes
+
+        Raises:
+            RuntimeError: If image generation fails after all retries
         """
         max_retries = 3
         for attempt in range(max_retries):
@@ -193,14 +198,14 @@ IMPORTANT OUTPUT REQUIREMENTS:
                                         return img_bytes
                                     else:
                                         print(f"Warning: Invalid image format in response for iteration {index+1} (magic: {img_bytes[:4].hex() if len(img_bytes) >= 4 else 'too short'})")
-                        print(f"Warning: No image data in response for iteration {index+1}, creating placeholder")
-                        return self._create_placeholder_image(resolution)
+                        raise RuntimeError(f"Gemini returned no image data for image {index+1}")
                     else:
-                        print(f"Warning: No content in response for iteration {index+1}, creating placeholder")
-                        return self._create_placeholder_image(resolution)
+                        raise RuntimeError(f"Gemini returned no content for image {index+1}")
                 else:
-                    print(f"Warning: No candidates in response for iteration {index+1}, creating placeholder")
-                    return self._create_placeholder_image(resolution)
+                    raise RuntimeError(f"Gemini returned no candidates for image {index+1} — may have been blocked by safety filters")
+
+            except RuntimeError:
+                raise  # Don't retry our own errors from response validation above
 
             except Exception as e:
                 error_msg = str(e)
@@ -213,24 +218,6 @@ IMPORTANT OUTPUT REQUIREMENTS:
                     continue
 
                 if '429' in error_msg or 'quota' in error_msg.lower():
-                    print(f"Warning: Quota exceeded for image {index+1}. Creating placeholder.")
-                    print("  Tip: Check your quota at https://ai.dev/rate-limit")
+                    raise RuntimeError(f"API quota exceeded for image {index+1}. Check quota at https://ai.dev/rate-limit")
                 else:
-                    print(f"Warning: Failed to generate image {index+1}: {e}")
-                return self._create_placeholder_image(resolution)
-
-    def _create_placeholder_image(self, resolution: tuple) -> bytes:
-        """
-        Create a placeholder image when generation fails.
-
-        Args:
-            resolution: (width, height) tuple
-
-        Returns:
-            PNG image as bytes
-        """
-        from io import BytesIO
-        img = Image.new('RGB', resolution, color='lightgray')
-        buffer = BytesIO()
-        img.save(buffer, format='PNG')
-        return buffer.getvalue()
+                    raise RuntimeError(f"Failed to generate image {index+1}: {e}")
