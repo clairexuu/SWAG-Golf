@@ -273,7 +273,7 @@ class PipelineService:
 
         # Auto-summarize at 10 feedbacks
         was_summarized = False
-        if context.feedback_count >= 3: # --------------- USE 3 FOR TEST
+        if context.feedback_count >= 10: # --------------- USE 3 FOR TEST
             self.summarize_feedback(session_id, style_id)
             was_summarized = True
 

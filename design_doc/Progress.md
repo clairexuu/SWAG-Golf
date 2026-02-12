@@ -4,6 +4,7 @@
 
 ## In @style/
 - No "Do Not Use" image references yet
+**- add a page to show all images in a styles**
 
 ## In @RAG
 
@@ -23,7 +24,6 @@
     - Muscular / Athletic baseball player with baseball bat in his right hand, resting behind his neck on his shoulder. HIs left hand is tossing up a baseball casually like he’s ready to play ball. Have a anime style to it - and have smoke coming from his eyes. 
 
 ## In @feedback
-**- TEST feedback_summary**
 
 ## In @control/
 - USE /plugin install ui-designer@daymade-claude-code-skills
@@ -39,3 +39,6 @@ Reflect this new feature in @design_doc/
 
 ## Deliverable
 **- Should be a downloaded web app through electron?**
+
+## Future Implementations
+- User and login

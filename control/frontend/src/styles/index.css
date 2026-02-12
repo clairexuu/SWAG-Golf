@@ -41,14 +41,20 @@
   ::-webkit-scrollbar-thumb:hover {
     background: #555555;
   }
+
+  /* Narrow sidebar scrollbar */
+  .sidebar-scroll::-webkit-scrollbar {
+    width: 4px;
+  }
 }
 
 @layer components {
+  /* === BUTTONS === */
   .btn-primary {
     @apply bg-swag-green text-black font-bold uppercase tracking-wider
            px-6 py-3 rounded-btn transition-all
            hover:bg-swag-green-muted hover:shadow-glow-green hover:scale-[1.02]
-           active:bg-swag-green-dark active:scale-100
+           active:bg-swag-green-dark active:scale-[0.97]
            disabled:bg-surface-4 disabled:text-swag-text-quaternary disabled:cursor-not-allowed disabled:shadow-none disabled:hover:scale-100;
   }
 
@@ -56,7 +62,7 @@
     @apply bg-transparent text-swag-green border border-swag-green
            font-semibold px-4 py-2 rounded-btn transition-all
            hover:bg-swag-green/10 hover:shadow-glow-green
-           active:bg-swag-green/20
+           active:bg-swag-green/20 active:scale-[0.97]
            disabled:bg-transparent disabled:text-swag-text-quaternary disabled:border-swag-border-subtle disabled:cursor-not-allowed disabled:shadow-none;
   }
 
@@ -64,10 +70,22 @@
     @apply bg-swag-pink text-white font-bold uppercase tracking-wider
            px-4 py-2 rounded-btn transition-all
            hover:bg-swag-pink-hover hover:shadow-glow-pink hover:scale-[1.02]
-           active:scale-100
+           active:scale-[0.97]
            disabled:bg-surface-4 disabled:text-swag-text-quaternary disabled:cursor-not-allowed disabled:shadow-none disabled:hover:scale-100;
   }
 
+  .btn-icon {
+    @apply p-2 rounded-lg text-swag-text-tertiary
+           hover:text-swag-white hover:bg-surface-3 transition-all
+           active:scale-95;
+  }
+
+  .btn-ghost {
+    @apply px-3 py-1.5 rounded-btn text-sm text-swag-text-secondary
+           hover:text-swag-white hover:bg-surface-2 transition-all;
+  }
+
+  /* === INPUTS === */
   .input-dark {
     @apply bg-surface-2 border border-swag-border text-swag-white
            px-4 py-3 rounded-input placeholder-swag-text-quaternary
@@ -75,6 +93,7 @@
            transition-colors;
   }
 
+  /* === PANELS === */
   .panel {
     @apply bg-surface-1 p-5 rounded-panel
            overflow-hidden flex flex-col;
@@ -84,6 +103,7 @@
     @apply font-display text-2xl uppercase tracking-wider text-swag-white mb-4;
   }
 
+  /* === TAGS === */
   .tag-green {
     @apply inline-block bg-swag-green/20 text-swag-green text-xs font-bold uppercase
            tracking-wider px-3 py-1 rounded-tag;
@@ -92,5 +112,162 @@
   .tag-pink {
     @apply inline-block bg-swag-pink/20 text-swag-pink text-xs font-bold uppercase
            tracking-wider px-3 py-1 rounded-tag;
+  }
+
+  /* === SKELETON / SHIMMER LOADING === */
+  .skeleton {
+    @apply bg-surface-3 rounded-card relative overflow-hidden;
+  }
+  .skeleton::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(57, 255, 20, 0.04) 50%,
+      transparent 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 2s infinite linear;
+  }
+
+  /* === MODAL / OVERLAY === */
+  .overlay-backdrop {
+    @apply fixed inset-0 bg-black/70 backdrop-blur-sm z-40 animate-overlay-in;
+  }
+  .modal-panel {
+    @apply bg-surface-1 border border-swag-border rounded-panel p-6
+           shadow-modal animate-fade-in-scale;
+  }
+
+  /* === SLIDE-OVER PANEL === */
+  .slide-over {
+    @apply fixed top-0 right-0 h-full w-[420px] max-w-[90vw]
+           bg-surface-1 border-l border-swag-border shadow-modal
+           z-50 animate-slide-in-right overflow-y-auto;
+  }
+  .slide-over-header {
+    @apply flex items-center justify-between px-6 py-4
+           border-b border-swag-border sticky top-0 bg-surface-1 z-10;
+  }
+
+  /* === TOAST NOTIFICATIONS === */
+  .toast-container {
+    @apply fixed top-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none;
+  }
+  .toast {
+    @apply pointer-events-auto px-4 py-3 rounded-card border
+           text-sm font-medium flex items-center gap-3
+           animate-toast-in shadow-card-elevated;
+  }
+  .toast-success {
+    @apply bg-swag-green/10 border-swag-green/30 text-swag-green;
+  }
+  .toast-error {
+    @apply bg-swag-pink/10 border-swag-pink/30 text-swag-pink;
+  }
+  .toast-info {
+    @apply bg-surface-2 border-swag-border text-swag-white;
+  }
+
+  /* === STYLE CARD === */
+  .style-card {
+    @apply relative p-4 border rounded-card cursor-pointer transition-all duration-200
+           bg-surface-2 border-swag-border
+           hover:border-swag-border-strong hover:shadow-card-hover hover:scale-[1.01];
+  }
+  .style-card-selected {
+    @apply border-swag-green bg-swag-green/5 shadow-glow-green-sm;
+  }
+
+  /* === KEYBOARD SHORTCUT BADGE === */
+  .kbd {
+    @apply inline-flex items-center justify-center px-1.5 py-0.5
+           text-[10px] font-mono font-medium uppercase tracking-wider
+           bg-surface-3 text-swag-text-tertiary border border-swag-border
+           rounded;
+  }
+
+  /* === DIVIDER === */
+  .divider {
+    @apply border-t border-swag-border my-4;
+  }
+
+  /* === STATUS INDICATOR DOT === */
+  .status-dot {
+    @apply w-2 h-2 rounded-full;
+  }
+  .status-dot-green {
+    @apply bg-swag-green shadow-glow-green-sm;
+  }
+  .status-dot-pink {
+    @apply bg-swag-pink;
+  }
+  .status-dot-idle {
+    @apply bg-swag-text-quaternary;
+  }
+
+  /* === SKETCH CARD === */
+  .sketch-card {
+    @apply relative bg-surface-2 border border-swag-border rounded-card
+           overflow-hidden transition-all duration-200
+           hover:border-swag-green/40 hover:shadow-card-hover;
+  }
+  .sketch-card-overlay {
+    @apply absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent
+           opacity-0 transition-all duration-200
+           flex flex-col justify-end p-3;
+  }
+
+  /* === LIGHTBOX === */
+  .lightbox-backdrop {
+    @apply fixed inset-0 bg-black/90 backdrop-blur-sm z-50
+           flex items-center justify-center animate-overlay-in cursor-zoom-out;
+  }
+  .lightbox-image {
+    @apply max-w-[90vw] max-h-[90vh] object-contain animate-fade-in-scale
+           rounded-img shadow-modal;
+  }
+
+  /* === EMPTY STATE === */
+  .empty-state {
+    @apply flex flex-col items-center justify-center h-full text-center px-8 py-12;
+  }
+  .empty-state-icon {
+    @apply w-20 h-20 text-swag-text-quaternary mb-6;
+  }
+  .empty-state-title {
+    @apply font-display text-2xl uppercase tracking-wider text-swag-white mb-2;
+  }
+  .empty-state-description {
+    @apply text-sm text-swag-text-tertiary max-w-xs;
+  }
+
+  /* === SIDEBAR === */
+  .sidebar {
+    @apply bg-surface-1 border-r border-swag-border flex flex-col
+           transition-all duration-300 ease-in-out overflow-hidden;
+  }
+  .sidebar-expanded {
+    @apply w-80;
+  }
+  .sidebar-collapsed {
+    @apply w-16;
+  }
+
+  /* === PROMPT COMPOSER === */
+  .prompt-composer {
+    @apply bg-surface-2 border border-swag-border rounded-panel
+           transition-all duration-200
+           focus-within:border-swag-green focus-within:shadow-glow-green-sm;
+  }
+  .prompt-textarea {
+    @apply w-full bg-transparent text-swag-white placeholder-swag-text-quaternary
+           px-4 py-3 resize-none focus:outline-none;
+  }
+  .prompt-toolbar {
+    @apply flex items-center justify-between px-4 py-2
+           border-t border-swag-border/50;
   }
 }

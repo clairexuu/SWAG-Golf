@@ -1,9 +1,12 @@
-// Root React component
-
+import { ToastProvider } from './components/shared/ToastContext';
 import MainLayout from './components/Layout/MainLayout';
 
 function App() {
-  return <MainLayout />;
+  return (
+    <ToastProvider>
+      <MainLayout />
+    </ToastProvider>
+  );
 }
 
 export default App;

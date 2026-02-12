@@ -1,23 +1,37 @@
-// Main Layout - Three-panel structure
-
 import { useState, useEffect, useRef, useCallback } from 'react';
+import Header from './Header';
+import Sidebar from './Sidebar';
 import StyleSelector from '../LeftPanel/StyleSelector';
 import StyleManager from '../LeftPanel/StyleManager';
-import ChatInput from '../CenterPanel/ChatInput';
-import UserFeedbackInput from '../CenterPanel/UserFeedbackInput';
+import PromptComposer from '../CenterPanel/PromptComposer';
 import SketchGrid from '../RightPanel/SketchGrid';
+import Lightbox from '../RightPanel/Lightbox';
+import SlideOver from '../shared/SlideOver';
+import ToastContainer from '../shared/Toast';
 import { useGenerate } from '../../hooks/useGenerate';
-import { submitFeedback, summarizeFeedback } from '../../services/api';
+import { useSidebar } from '../../hooks/useSidebar';
+import { useToast } from '../../hooks/useToast';
+import { submitFeedback, summarizeFeedback, getStyles } from '../../services/api';
+import type { Style, Sketch } from '../../types';
+
+const API_BASE_URL = 'http://localhost:3001/api';
+const getImageUrl = (imagePath: string) => `${API_BASE_URL}${imagePath}`;
 
 export default function MainLayout() {
   const [selectedStyleId, setSelectedStyleId] = useState<string | null>(null);
-  const [lastInput, setLastInput] = useState('');
+  const [selectedStyleName, setSelectedStyleName] = useState<string | undefined>();
+  const [, setLastInput] = useState('');
   const [stylesVersion, setStylesVersion] = useState(0);
   const [sessionId, setSessionId] = useState(() => crypto.randomUUID());
   const [hasFeedback, setHasFeedback] = useState(false);
-  const { generate, isGenerating, error, sketches, clearSketches } = useGenerate();
+  const [slideOverOpen, setSlideOverOpen] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
-  // Refs for beforeunload handler (needs current values without re-registering)
+  const { generate, isGenerating, error, sketches, clearSketches } = useGenerate();
+  const { collapsed: sidebarCollapsed, toggle: toggleSidebar } = useSidebar();
+  const toast = useToast();
+
+  // Refs for beforeunload handler
   const sessionIdRef = useRef(sessionId);
   const selectedStyleIdRef = useRef(selectedStyleId);
   const hasFeedbackRef = useRef(hasFeedback);
@@ -25,6 +39,18 @@ export default function MainLayout() {
   useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
   useEffect(() => { selectedStyleIdRef.current = selectedStyleId; }, [selectedStyleId]);
   useEffect(() => { hasFeedbackRef.current = hasFeedback; }, [hasFeedback]);
+
+  // Fetch style name when style changes
+  useEffect(() => {
+    if (!selectedStyleId) {
+      setSelectedStyleName(undefined);
+      return;
+    }
+    getStyles().then(styles => {
+      const style = styles.find((s: Style) => s.id === selectedStyleId);
+      setSelectedStyleName(style?.name);
+    }).catch(() => {});
+  }, [selectedStyleId, stylesVersion]);
 
   // Flush feedback on page unload
   useEffect(() => {
@@ -45,9 +71,29 @@ export default function MainLayout() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, []);
 
+  // Global keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Cmd/Ctrl + B: toggle sidebar
+      if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
+        e.preventDefault();
+        toggleSidebar();
+      }
+      // Escape: close lightbox, then slide-over
+      if (e.key === 'Escape') {
+        if (lightboxIndex !== null) {
+          setLightboxIndex(null);
+        } else if (slideOverOpen) {
+          setSlideOverOpen(false);
+        }
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [toggleSidebar, lightboxIndex, slideOverOpen]);
+
   const handleGenerate = (input: string) => {
     if (!selectedStyleId) return;
-
     setLastInput(input);
     generate({
       input,
@@ -59,7 +105,6 @@ export default function MainLayout() {
 
   const handleSubmitFeedback = useCallback(async (feedback: string) => {
     if (!selectedStyleId) return;
-
     try {
       await submitFeedback({
         sessionId,
@@ -67,13 +112,14 @@ export default function MainLayout() {
         feedback,
       });
       setHasFeedback(true);
+      toast.success('Feedback submitted');
     } catch (err) {
       console.error('Failed to submit feedback:', err);
+      toast.error('Failed to submit feedback');
     }
-  }, [sessionId, selectedStyleId]);
+  }, [sessionId, selectedStyleId, toast]);
 
   const handleStyleSelect = useCallback(async (newStyleId: string) => {
-    // Summarize feedback for previous style before switching
     if (hasFeedback && selectedStyleId) {
       try {
         await summarizeFeedback({ sessionId, styleId: selectedStyleId });
@@ -82,7 +128,6 @@ export default function MainLayout() {
       }
     }
 
-    // Switch to new style with fresh session
     setSelectedStyleId(newStyleId);
     setSessionId(crypto.randomUUID());
     setHasFeedback(false);
@@ -105,65 +150,98 @@ export default function MainLayout() {
     handleStyleChanged();
   };
 
+  const handleDownloadSketch = async (sketch: Sketch) => {
+    const imageUrl = getImageUrl(sketch.imagePath);
+    try {
+      const response = await fetch(imageUrl);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `sketch_${Date.now()}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      toast.success('Sketch downloaded');
+    } catch (err) {
+      console.error('Download failed:', err);
+      toast.error('Download failed');
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen bg-surface-0">
+      {/* Toast notifications */}
+      <ToastContainer />
+
       {/* Header */}
-      <header className="bg-surface-0 border-b-2 border-swag-green px-6 py-4">
-        <h1 className="font-display text-3xl text-swag-green uppercase tracking-widest">
-          SWAG Concept Sketch Agent
-        </h1>
-        <p className="text-sm text-swag-text-tertiary mt-0.5 font-body">
-          AI-powered design assistant for concept sketching
-        </p>
-      </header>
+      <Header
+        sidebarCollapsed={sidebarCollapsed}
+        onToggleSidebar={toggleSidebar}
+        isGenerating={isGenerating}
+        selectedStyleName={selectedStyleName}
+      />
 
-      {/* Main three-panel layout: 1/4 style, 1/4 input, 1/2 generated images */}
-      <main className="flex-1 grid grid-cols-[25%_25%_50%] gap-3 p-3 overflow-hidden">
-        {/* Left Panel - StyleSelector (top) + StyleManager (bottom) */}
-        <aside className="panel">
-          <div className="flex-1 min-h-0 overflow-hidden flex flex-col pb-4 mb-4">
-            <StyleSelector
-              selectedStyleId={selectedStyleId}
-              onStyleSelect={handleStyleSelect}
-              refreshKey={stylesVersion}
-            />
-          </div>
-          <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-            <StyleManager
-              selectedStyleId={selectedStyleId}
-              onStyleChanged={handleStyleChanged}
-              onStyleDeleted={handleStyleDeleted}
-            />
-          </div>
-        </aside>
+      {/* Main area: Sidebar + Workspace */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Sidebar */}
+        <Sidebar
+          collapsed={sidebarCollapsed}
+          onManageStyles={() => setSlideOverOpen(true)}
+        >
+          <StyleSelector
+            selectedStyleId={selectedStyleId}
+            onStyleSelect={handleStyleSelect}
+            refreshKey={stylesVersion}
+          />
+        </Sidebar>
 
-        {/* Center Panel - ChatInput (top) + UserFeedbackInput (bottom) */}
-        <section className="panel">
-          <div className="flex-1 min-h-0 overflow-hidden flex flex-col pb-4 mb-4">
-            <ChatInput
-              onGenerate={handleGenerate}
-              isGenerating={isGenerating}
-              disabled={!selectedStyleId}
-            />
-          </div>
-          <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-            <UserFeedbackInput
-              onSubmit={handleSubmitFeedback}
-              isGenerating={isGenerating}
-              disabled={sketches.length === 0}
-            />
-          </div>
-        </section>
-
-        {/* Right Panel - SketchGrid */}
-        <aside className="panel">
+        {/* Main workspace */}
+        <main className="flex-1 flex flex-col overflow-hidden bg-surface-0">
+          {/* Sketch gallery */}
           <SketchGrid
             sketches={sketches}
             isGenerating={isGenerating}
             error={error}
+            onImageClick={(index) => setLightboxIndex(index)}
           />
-        </aside>
-      </main>
+
+          {/* Prompt composer */}
+          <PromptComposer
+            onGenerate={handleGenerate}
+            onSubmitFeedback={handleSubmitFeedback}
+            isGenerating={isGenerating}
+            disabled={!selectedStyleId}
+            hasSketches={sketches.length > 0}
+          />
+        </main>
+      </div>
+
+      {/* Slide-over: Style Manager */}
+      {slideOverOpen && (
+        <>
+          <div className="overlay-backdrop" onClick={() => setSlideOverOpen(false)} />
+          <SlideOver onClose={() => setSlideOverOpen(false)} title="Manage Styles">
+            <StyleManager
+              selectedStyleId={selectedStyleId}
+              onStyleChanged={handleStyleChanged}
+              onStyleDeleted={handleStyleDeleted}
+              onClose={() => setSlideOverOpen(false)}
+            />
+          </SlideOver>
+        </>
+      )}
+
+      {/* Lightbox */}
+      {lightboxIndex !== null && sketches.length > 0 && (
+        <Lightbox
+          sketches={sketches}
+          initialIndex={lightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+          onDownload={handleDownloadSketch}
+        />
+      )}
     </div>
   );
 }
