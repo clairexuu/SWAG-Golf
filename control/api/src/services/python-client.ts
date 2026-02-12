@@ -10,12 +10,14 @@ const PYTHON_API_URL = process.env.PYTHON_API_URL || 'http://127.0.0.1:8000';
  */
 export async function fetchFromPython<T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  signal?: AbortSignal
 ): Promise<T> {
   const url = `${PYTHON_API_URL}${endpoint}`;
 
   const response = await fetch(url, {
     ...options,
+    signal,
     headers: {
       'Content-Type': 'application/json',
       ...options.headers,

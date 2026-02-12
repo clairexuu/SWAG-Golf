@@ -33,6 +33,6 @@ export function SkeletonStyleCard() {
 
 export function SkeletonSketchCard() {
   return (
-    <div className="skeleton aspect-[3/4] animate-pulse-glow" />
+    <div className="skeleton h-full aspect-[9/16] animate-pulse-glow" />
   );
 }

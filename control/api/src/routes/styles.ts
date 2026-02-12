@@ -208,4 +208,33 @@ router.delete('/styles/:styleId', async (req, res) => {
   }
 });
 
+router.delete('/styles/:styleId/images', async (req, res) => {
+  const { styleId } = req.params;
+  try {
+    const pythonHealthy = await checkPythonHealth();
+    if (!pythonHealthy) {
+      return res.status(503).json({
+        success: false,
+        error: 'Python backend is unavailable'
+      });
+    }
+
+    const response = await fetchFromPython<{ success: boolean; deleted: number; message: string }>(
+      `/styles/${styleId}/images`,
+      {
+        method: 'DELETE',
+        body: JSON.stringify(req.body),
+      }
+    );
+    return res.json(response);
+  } catch (error: any) {
+    console.error(`Error deleting images from style ${styleId}:`, error);
+    const status = error.message?.includes('404') ? 404 : 500;
+    res.status(status).json({
+      success: false,
+      error: error.message || 'Failed to delete images'
+    });
+  }
+});
+
 export default router;

@@ -69,10 +69,6 @@ export default function StyleSelector({
     <div className="space-y-2">
       {styles.map((style) => {
         const isSelected = selectedStyleId === style.id;
-        const hasVisualRules =
-          style.visualRules.lineWeight ||
-          style.visualRules.looseness ||
-          style.visualRules.complexity;
 
         return (
           <div
@@ -88,42 +84,11 @@ export default function StyleSelector({
             />
 
             <div className="pl-2">
-              {/* Header row: name + ref image count */}
-              <div className="flex items-center justify-between mb-1">
-                <h3 className="font-semibold text-swag-white text-sm">{style.name}</h3>
-                {style.referenceImages.length > 0 && (
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-swag-text-quaternary bg-surface-3 px-2 py-0.5 rounded-tag">
-                    {style.referenceImages.length} refs
-                  </span>
-                )}
-              </div>
-
-              {/* Description */}
+              <h3 className="font-semibold text-swag-white text-sm mb-1">{style.name}</h3>
               {style.description && (
-                <p className="text-xs text-swag-text-secondary line-clamp-2 mb-2">
+                <p className="text-xs text-swag-text-secondary line-clamp-2">
                   {style.description}
                 </p>
-              )}
-
-              {/* Visual rule badges */}
-              {hasVisualRules && (
-                <div className="flex flex-wrap gap-1.5">
-                  {style.visualRules.lineWeight && (
-                    <span className="tag-green !text-[10px] !px-2 !py-0.5">
-                      {style.visualRules.lineWeight}
-                    </span>
-                  )}
-                  {style.visualRules.looseness && (
-                    <span className="tag-green !text-[10px] !px-2 !py-0.5">
-                      {style.visualRules.looseness}
-                    </span>
-                  )}
-                  {style.visualRules.complexity && (
-                    <span className="tag-green !text-[10px] !px-2 !py-0.5">
-                      {style.visualRules.complexity}
-                    </span>
-                  )}
-                </div>
               )}
             </div>
           </div>

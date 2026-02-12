@@ -10,12 +10,11 @@
 
 ## In @generate
 **- Do we keep all generated image on disk or do we want to clear them once a while?**
+**- add a page to show all past generations by styles**
 - Implement Approach 3: Improved In-Context Guidance in @proposal.md
 
 - nano banana generation 
     - Currently enforced 9:16 portrait images, another choice is to follow the layout of the images in style
-
-- Parallel API calls
 
 - TEST PROMPT: 
 
@@ -27,7 +26,6 @@
 
 ## In @control/
 - USE /plugin install ui-designer@daymade-claude-code-skills
-- add a feature to **interrupt generaton**
 - Need **error log** on the frontend when anything fails, such as python connection error
     instead of falling to placeholder, we should show what's wrong in the error log and maybe suggest a fix
 

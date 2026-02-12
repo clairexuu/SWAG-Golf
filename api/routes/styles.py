@@ -1,15 +1,21 @@
 """Styles endpoint - returns available styles from StyleRegistry."""
 
 import json
+import os
 import shutil
 import tempfile
 from pathlib import Path
 from typing import List, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from pydantic import BaseModel
 
 from api.services.pipeline import PipelineService
 from api.utils.case_converter import convert_keys_to_camel
+
+
+class DeleteImagesRequest(BaseModel):
+    filenames: List[str]
 
 router = APIRouter()
 
@@ -45,7 +51,7 @@ def get_styles():
                 "name": style.name,
                 "description": style.description,
                 "visual_rules": style.visual_rules,
-                "reference_images": [],  # Don't expose image paths to frontend
+                "reference_images": [os.path.basename(p) for p in style.reference_images],
                 "do_not_use": []
             }
             styles_data.append(convert_keys_to_camel(style_dict))
@@ -101,7 +107,7 @@ async def create_style(
             "name": style.name,
             "description": style.description,
             "visual_rules": style.visual_rules,
-            "reference_images": [],
+            "reference_images": [os.path.basename(p) for p in style.reference_images],
             "do_not_use": [],
         }
 
@@ -162,6 +168,26 @@ def delete_style(style_id: str):
         return {
             "success": True,
             "message": f"Deleted style '{style_id}' and {deleted_count} reference images"
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/styles/{style_id}/images")
+def delete_images_from_style(style_id: str, request: DeleteImagesRequest):
+    """
+    Delete specific reference images from a style.
+    Rebuilds embeddings after deletion.
+    """
+    try:
+        service = PipelineService()
+        deleted_count = service.delete_images_from_style(style_id, request.filenames)
+        return {
+            "success": True,
+            "deleted": deleted_count,
+            "message": f"Deleted {deleted_count} image(s) from style '{style_id}'"
         }
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

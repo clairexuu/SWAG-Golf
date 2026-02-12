@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from api.routes import styles, generate, feedback
+from api.routes import styles, generate, feedback, generations
 
 app = FastAPI(
     title="SWAG-Golf Python API",
@@ -32,6 +32,11 @@ generated_dir = Path("generated_outputs")
 if generated_dir.exists():
     app.mount("/generated", StaticFiles(directory=str(generated_dir)), name="generated")
 
+# Mount reference images as static files
+reference_images_dir = Path("rag/reference_images")
+if reference_images_dir.exists():
+    app.mount("/reference-images", StaticFiles(directory=str(reference_images_dir)), name="reference-images")
+
 
 @app.get("/health")
 def health_check():
@@ -47,6 +52,7 @@ def health_check():
 app.include_router(styles.router)
 app.include_router(generate.router)
 app.include_router(feedback.router)
+app.include_router(generations.router)
 
 
 @app.on_event("startup")
@@ -63,6 +69,7 @@ async def startup_event():
     print("  POST http://localhost:8000/generate")
     print("  POST http://localhost:8000/feedback")
     print("  POST http://localhost:8000/feedback/summarize")
+    print("  GET  http://localhost:8000/generations")
     print("  GET  http://localhost:8000/generated/{path} (static files)")
     print("=" * 60)
 

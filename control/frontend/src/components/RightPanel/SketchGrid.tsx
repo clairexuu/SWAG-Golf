@@ -1,3 +1,4 @@
+import JSZip from 'jszip';
 import type { Sketch } from '../../types';
 import SketchCard from './SketchCard';
 import { SkeletonSketchCard } from '../shared/Skeleton';
@@ -12,9 +13,10 @@ interface SketchGridProps {
   isGenerating: boolean;
   error: string | null;
   onImageClick: (index: number) => void;
+  onCancel: () => void;
 }
 
-export default function SketchGrid({ sketches, isGenerating, error, onImageClick }: SketchGridProps) {
+export default function SketchGrid({ sketches, isGenerating, error, onImageClick, onCancel }: SketchGridProps) {
   const handleDownload = async (sketch: Sketch) => {
     const imageUrl = getImageUrl(sketch.imagePath);
     try {
@@ -34,9 +36,27 @@ export default function SketchGrid({ sketches, isGenerating, error, onImageClick
   };
 
   const handleDownloadAll = async () => {
-    for (const sketch of sketches) {
-      await handleDownload(sketch);
-    }
+    const zip = new JSZip();
+    await Promise.all(
+      sketches.map(async (sketch, i) => {
+        try {
+          const response = await fetch(getImageUrl(sketch.imagePath));
+          const blob = await response.blob();
+          zip.file(`sketch_${i + 1}.png`, blob);
+        } catch (err) {
+          console.error(`Failed to fetch sketch ${i + 1}:`, err);
+        }
+      })
+    );
+    const zipBlob = await zip.generateAsync({ type: 'blob' });
+    const url = window.URL.createObjectURL(zipBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `sketches_${Date.now()}.zip`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
   };
 
   // Error state
@@ -54,7 +74,7 @@ export default function SketchGrid({ sketches, isGenerating, error, onImageClick
   if (isGenerating) {
     return (
       <div className="flex-1 flex flex-col overflow-hidden p-4">
-        <div className="flex-1 grid grid-cols-2 gap-4 overflow-y-auto">
+        <div className="flex-1 grid grid-cols-4 gap-3 overflow-hidden justify-items-center">
           <SkeletonSketchCard />
           <SkeletonSketchCard />
           <SkeletonSketchCard />
@@ -63,6 +83,12 @@ export default function SketchGrid({ sketches, isGenerating, error, onImageClick
         <div className="text-center py-4">
           <p className="text-swag-white font-medium animate-pulse">Generating your concept sketches...</p>
           <p className="text-xs text-swag-text-tertiary mt-1">This may take a few moments</p>
+          <button
+            onClick={onCancel}
+            className="px-4 py-1.5 text-xs uppercase tracking-wider mt-2 rounded bg-red-600 hover:bg-red-700 text-white font-medium transition-colors"
+          >
+            Cancel
+          </button>
         </div>
       </div>
     );
@@ -105,12 +131,11 @@ export default function SketchGrid({ sketches, isGenerating, error, onImageClick
       </div>
 
       {/* Grid */}
-      <div className="flex-1 grid grid-cols-2 gap-4 overflow-y-auto">
+      <div className="flex-1 grid grid-cols-4 gap-3 overflow-hidden justify-items-center">
         {sketches.map((sketch, index) => (
           <SketchCard
             key={sketch.id}
             sketch={sketch}
-            index={index}
             onExpand={() => onImageClick(index)}
             onDownload={() => handleDownload(sketch)}
           />

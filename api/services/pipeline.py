@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from style.registry import StyleRegistry
 from style.types import Style
 from style.init_style import delete_style as fs_delete_style
+from style.init_style import delete_images_from_style as fs_delete_images_from_style
 from style.init_style import add_images_to_existing_style
 from style.init_style import create_new_style, slugify, DEFAULT_VISUAL_RULES
 from style.init_style import update_style_json
@@ -173,6 +174,32 @@ class PipelineService:
             index.build_index()
 
         return {"added": added, "skipped": skipped}
+
+    def delete_images_from_style(self, style_id: str, filenames: List[str]) -> int:
+        """
+        Delete specific images from a style, update style.json, rebuild embeddings.
+
+        Returns:
+            Number of images deleted from disk.
+        """
+        self._initialize()
+
+        deleted_count = fs_delete_images_from_style(style_id, filenames)
+
+        # Clear registry cache so updated style is loaded
+        self.style_registry._cache.pop(style_id, None)
+
+        # Rebuild embeddings if images were deleted
+        if deleted_count > 0:
+            if style_id in self.index_registry._indices:
+                del self.index_registry._indices[style_id]
+            # Reload style and rebuild if images remain
+            style = self.style_registry.get_style(style_id)
+            if style.reference_images:
+                index = self.index_registry.get_index(style_id)
+                index.build_index()
+
+        return deleted_count
 
     def generate(
         self,

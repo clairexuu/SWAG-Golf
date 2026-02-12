@@ -9,6 +9,14 @@ const router = Router();
 const mockService = new MockGenerationService();
 
 router.post('/generate', async (req, res) => {
+  // Abort Python fetch if client disconnects (user cancelled)
+  const abortController = new AbortController();
+  req.on('close', () => {
+    if (!res.writableEnded) {
+      abortController.abort();
+    }
+  });
+
   try {
     const { input, styleId, numImages, experimentalMode, sessionId } = req.body as GenerateRequest;
 
@@ -42,9 +50,13 @@ router.post('/generate', async (req, res) => {
         const response = await fetchFromPython<GenerateResponse>('/generate', {
           method: 'POST',
           body: JSON.stringify({ input, styleId, numImages: numImages || 4, experimentalMode, sessionId })
-        });
+        }, abortController.signal);
         return res.json(response);
       } catch (pythonError) {
+        if ((pythonError as Error).name === 'AbortError') {
+          console.log('Generation cancelled by client');
+          return;
+        }
         console.error('Python backend error, falling back to mock:', pythonError);
       }
     }
@@ -60,6 +72,10 @@ router.post('/generate', async (req, res) => {
 
     res.json(result);
   } catch (error) {
+    if ((error as Error).name === 'AbortError') {
+      console.log('Generation cancelled by client');
+      return;
+    }
     console.error('Generation error:', error);
     res.status(500).json({
       success: false,

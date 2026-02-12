@@ -2,10 +2,12 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import Header from './Header';
 import Sidebar from './Sidebar';
 import StyleSelector from '../LeftPanel/StyleSelector';
+import StyleLibrary from '../LeftPanel/StyleLibrary';
 import StyleManager from '../LeftPanel/StyleManager';
 import PromptComposer from '../CenterPanel/PromptComposer';
 import SketchGrid from '../RightPanel/SketchGrid';
 import Lightbox from '../RightPanel/Lightbox';
+import HistoryPage from '../HistoryPage/HistoryPage';
 import SlideOver from '../shared/SlideOver';
 import ToastContainer from '../shared/Toast';
 import { useGenerate } from '../../hooks/useGenerate';
@@ -25,9 +27,11 @@ export default function MainLayout() {
   const [sessionId, setSessionId] = useState(() => crypto.randomUUID());
   const [hasFeedback, setHasFeedback] = useState(false);
   const [slideOverOpen, setSlideOverOpen] = useState(false);
+  const [sidebarTab, setSidebarTab] = useState<'styles' | 'library'>('styles');
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [currentView, setCurrentView] = useState<'workspace' | 'history'>('workspace');
 
-  const { generate, isGenerating, error, sketches, clearSketches } = useGenerate();
+  const { generate, cancel, isGenerating, error, sketches, clearSketches } = useGenerate();
   const { collapsed: sidebarCollapsed, toggle: toggleSidebar } = useSidebar();
   const toast = useToast();
 
@@ -181,6 +185,8 @@ export default function MainLayout() {
         onToggleSidebar={toggleSidebar}
         isGenerating={isGenerating}
         selectedStyleName={selectedStyleName}
+        currentView={currentView}
+        onViewChange={setCurrentView}
       />
 
       {/* Main area: Sidebar + Workspace */}
@@ -189,6 +195,15 @@ export default function MainLayout() {
         <Sidebar
           collapsed={sidebarCollapsed}
           onManageStyles={() => setSlideOverOpen(true)}
+          activeTab={sidebarTab}
+          onTabChange={setSidebarTab}
+          libraryContent={
+            <StyleLibrary
+              refreshKey={stylesVersion}
+              onStyleChanged={handleStyleChanged}
+              onManageStyles={() => setSlideOverOpen(true)}
+            />
+          }
         >
           <StyleSelector
             selectedStyleId={selectedStyleId}
@@ -199,22 +214,26 @@ export default function MainLayout() {
 
         {/* Main workspace */}
         <main className="flex-1 flex flex-col overflow-hidden bg-surface-0">
-          {/* Sketch gallery */}
-          <SketchGrid
-            sketches={sketches}
-            isGenerating={isGenerating}
-            error={error}
-            onImageClick={(index) => setLightboxIndex(index)}
-          />
-
-          {/* Prompt composer */}
-          <PromptComposer
-            onGenerate={handleGenerate}
-            onSubmitFeedback={handleSubmitFeedback}
-            isGenerating={isGenerating}
-            disabled={!selectedStyleId}
-            hasSketches={sketches.length > 0}
-          />
+          {currentView === 'workspace' ? (
+            <>
+              <SketchGrid
+                sketches={sketches}
+                isGenerating={isGenerating}
+                error={error}
+                onImageClick={(index) => setLightboxIndex(index)}
+                onCancel={cancel}
+              />
+              <PromptComposer
+                onGenerate={handleGenerate}
+                onSubmitFeedback={handleSubmitFeedback}
+                isGenerating={isGenerating}
+                disabled={!selectedStyleId}
+                hasSketches={sketches.length > 0}
+              />
+            </>
+          ) : (
+            <HistoryPage onBackToWorkspace={() => setCurrentView('workspace')} />
+          )}
         </main>
       </div>
 

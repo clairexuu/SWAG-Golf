@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import generateRouter from './routes/generate.js';
 import stylesRouter from './routes/styles.js';
 import feedbackRouter from './routes/feedback.js';
+import generationsRouter from './routes/generations.js';
 import { checkPythonHealth } from './services/python-client.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -23,6 +24,10 @@ app.use(express.json());
 // Path: /api/generated/* -> ../../../generated_outputs/*
 const generatedImagesPath = path.resolve(__dirname, '../../../generated_outputs');
 app.use('/api/generated', express.static(generatedImagesPath));
+
+// Serve reference images from rag/reference_images/
+const referenceImagesPath = path.resolve(__dirname, '../../../rag/reference_images');
+app.use('/api/reference-images', express.static(referenceImagesPath));
 
 // Request logging
 app.use((req, res, next) => {
@@ -45,6 +50,7 @@ app.get('/api/health', async (req, res) => {
 app.use('/api', generateRouter);
 app.use('/api', stylesRouter);
 app.use('/api', feedbackRouter);
+app.use('/api', generationsRouter);
 
 // 404 handler
 app.use((req, res) => {

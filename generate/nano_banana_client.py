@@ -3,8 +3,10 @@ Google Gemini API Client - handles image generation using gemini-2.5-flash-image
 Renamed from nano_banana_client.py but kept the class name for backwards compatibility.
 """
 import os
+import time
 import base64
 from typing import List, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from google import genai
 from google.genai import types
 from PIL import Image
@@ -80,13 +82,12 @@ class NanaBananaClient:
         Raises:
             Exception: If API request fails
         """
-        # Load reference images as PIL Images
-        ref_parts = []
-        for img_path in reference_images[:5]:  # Limit to 5 reference images
+        # Filter to valid reference image paths (limit to 5)
+        valid_ref_paths = []
+        for img_path in reference_images[:5]:
             try:
-                # Load image as PIL Image
-                img = Image.open(img_path)
-                ref_parts.append(img)
+                Image.open(img_path).verify()
+                valid_ref_paths.append(img_path)
             except Exception as e:
                 print(f"Warning: Failed to load reference image {img_path}: {e}")
 
@@ -102,15 +103,57 @@ IMPORTANT OUTPUT REQUIREMENTS:
 - OUTPUT MUST BE BLACK AND WHITE / GRAYSCALE ONLY - NO COLOR
 """
 
-        # Generate images one at a time (Gemini generates one image per call)
-        generated_images = []
+        # Generate all images in parallel using threads
+        # Each thread loads its own PIL Image copies to avoid thread-safety issues
+        print(f"Generating {num_images} images in parallel...")
+        with ThreadPoolExecutor(max_workers=num_images) as executor:
+            futures = {
+                executor.submit(
+                    self._generate_single_image,
+                    enhanced_prompt, valid_ref_paths, resolution, aspect_ratio, temperature, i
+                ): i
+                for i in range(num_images)
+            }
+            results = [None] * num_images
+            for future in as_completed(futures):
+                idx = futures[future]
+                results[idx] = future.result()
 
-        for i in range(num_images):
+        return results
+
+    def _generate_single_image(
+        self,
+        enhanced_prompt: str,
+        ref_image_paths: List[str],
+        resolution: tuple,
+        aspect_ratio: str,
+        temperature: float,
+        index: int
+    ) -> bytes:
+        """
+        Generate a single image via the Gemini API.
+
+        Each thread loads its own PIL Image objects to avoid thread-safety issues
+        with shared PIL Images (which use lazy file-handle-based loading).
+
+        Args:
+            enhanced_prompt: The formatted prompt string
+            ref_image_paths: List of reference image file paths
+            resolution: (width, height) for placeholder fallback
+            aspect_ratio: Gemini aspect ratio preset
+            temperature: Generation temperature
+            index: Image index (0-based, used for logging)
+
+        Returns:
+            Image data as bytes
+        """
+        max_retries = 3
+        for attempt in range(max_retries):
             try:
-                # Prepare content with prompt and reference images
+                # Load reference images independently per thread
+                ref_parts = [Image.open(p) for p in ref_image_paths]
                 contents = [enhanced_prompt] + ref_parts
 
-                # Generate image with image output modality and size config
                 response = self.client.models.generate_content(
                     model=self.model_name,
                     contents=contents,
@@ -124,56 +167,50 @@ IMPORTANT OUTPUT REQUIREMENTS:
                     )
                 )
 
-                # Extract image from response
                 if response.candidates and len(response.candidates) > 0:
                     candidate = response.candidates[0]
                     if hasattr(candidate, 'content') and candidate.content.parts:
                         for part in candidate.content.parts:
-                            # Debug: show what's in the part
                             if os.getenv("DEBUG_GEMINI"):
                                 print(f"  Debug: Part type={type(part).__name__}, attrs={[a for a in dir(part) if not a.startswith('_')]}")
-                            # Check if part contains inline image data
                             if hasattr(part, 'inline_data') and part.inline_data:
                                 img_data = part.inline_data.data
 
-                                # Handle both raw bytes and base64-encoded strings
                                 if isinstance(img_data, str):
-                                    # If it's a string, assume it's base64-encoded
                                     img_bytes = base64.b64decode(img_data)
                                 else:
-                                    # If it's already bytes (standard for genai library), use directly
                                     img_bytes = img_data
 
-                                # Validate image format (PNG or JPEG)
-                                # PNG magic: 0x89504E47, JPEG magic: 0xFFD8FF
                                 if img_bytes and isinstance(img_bytes, bytes):
                                     if img_bytes.startswith(b'\x89PNG') or img_bytes.startswith(b'\xff\xd8\xff'):
-                                        generated_images.append(img_bytes)
-                                        break
+                                        return img_bytes
                                     else:
-                                        print(f"Warning: Invalid image format in response for iteration {i+1} (magic: {img_bytes[:4].hex() if len(img_bytes) >= 4 else 'too short'})")
-                        else:
-                            # No inline data found, create placeholder
-                            print(f"Warning: No image data in response for iteration {i+1}, creating placeholder")
-                            generated_images.append(self._create_placeholder_image(resolution))
+                                        print(f"Warning: Invalid image format in response for iteration {index+1} (magic: {img_bytes[:4].hex() if len(img_bytes) >= 4 else 'too short'})")
+                        print(f"Warning: No image data in response for iteration {index+1}, creating placeholder")
+                        return self._create_placeholder_image(resolution)
                     else:
-                        print(f"Warning: No content in response for iteration {i+1}, creating placeholder")
-                        generated_images.append(self._create_placeholder_image(resolution))
+                        print(f"Warning: No content in response for iteration {index+1}, creating placeholder")
+                        return self._create_placeholder_image(resolution)
                 else:
-                    print(f"Warning: No candidates in response for iteration {i+1}, creating placeholder")
-                    generated_images.append(self._create_placeholder_image(resolution))
+                    print(f"Warning: No candidates in response for iteration {index+1}, creating placeholder")
+                    return self._create_placeholder_image(resolution)
 
             except Exception as e:
                 error_msg = str(e)
+                is_retryable = '503' in error_msg or '429' in error_msg or 'unavailable' in error_msg.lower()
+
+                if is_retryable and attempt < max_retries - 1:
+                    wait = 2 ** attempt  # 1s, 2s, 4s
+                    print(f"Warning: Image {index+1} got transient error (attempt {attempt+1}/{max_retries}), retrying in {wait}s...")
+                    time.sleep(wait)
+                    continue
+
                 if '429' in error_msg or 'quota' in error_msg.lower():
-                    print(f"Warning: Quota exceeded for image {i+1}. Creating placeholder.")
+                    print(f"Warning: Quota exceeded for image {index+1}. Creating placeholder.")
                     print("  Tip: Check your quota at https://ai.dev/rate-limit")
                 else:
-                    print(f"Warning: Failed to generate image {i+1}: {e}")
-                # Create placeholder on failure
-                generated_images.append(self._create_placeholder_image(resolution))
-
-        return generated_images
+                    print(f"Warning: Failed to generate image {index+1}: {e}")
+                return self._create_placeholder_image(resolution)
 
     def _create_placeholder_image(self, resolution: tuple) -> bytes:
         """

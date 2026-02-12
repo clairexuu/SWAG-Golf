@@ -1,10 +1,12 @@
-import { SidebarCollapseIcon } from '../shared/Icons';
+import { SidebarCollapseIcon, ClockIcon } from '../shared/Icons';
 
 interface HeaderProps {
   sidebarCollapsed: boolean;
   onToggleSidebar: () => void;
   isGenerating: boolean;
   selectedStyleName?: string;
+  currentView: 'workspace' | 'history';
+  onViewChange: (view: 'workspace' | 'history') => void;
 }
 
 export default function Header({
@@ -12,6 +14,8 @@ export default function Header({
   onToggleSidebar,
   isGenerating,
   selectedStyleName,
+  currentView,
+  onViewChange,
 }: HeaderProps) {
   return (
     <header className="h-14 bg-surface-1 border-b border-swag-border flex items-center px-4 gap-4 flex-shrink-0">
@@ -58,6 +62,19 @@ export default function Header({
             {isGenerating ? 'Generating...' : 'Ready'}
           </span>
         </div>
+
+        {/* Archive toggle */}
+        <button
+          onClick={() => onViewChange(currentView === 'workspace' ? 'history' : 'workspace')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-btn text-xs font-bold uppercase tracking-wider transition-all ${
+            currentView === 'history'
+              ? 'bg-swag-green text-black'
+              : 'text-swag-text-tertiary hover:text-swag-white hover:bg-surface-3'
+          }`}
+        >
+          <ClockIcon className="w-3.5 h-3.5" />
+          Archive
+        </button>
 
         {/* Keyboard shortcut hint */}
         <div className="hidden lg:flex items-center gap-1">

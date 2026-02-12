@@ -6,32 +6,24 @@ const getImageUrl = (imagePath: string) => `${API_BASE_URL}${imagePath}`;
 
 interface SketchCardProps {
   sketch: Sketch;
-  index: number;
   onExpand: () => void;
   onDownload: () => void;
 }
 
-export default function SketchCard({ sketch, index, onExpand, onDownload }: SketchCardProps) {
+export default function SketchCard({ sketch, onExpand, onDownload }: SketchCardProps) {
   return (
-    <div className="sketch-card group cursor-pointer" onClick={onExpand}>
+    <div className="sketch-card group cursor-pointer h-full aspect-[9/16]" onClick={onExpand}>
       {/* Image container */}
-      <div className="aspect-[3/4] bg-surface-0 flex items-center justify-center">
+      <div className="h-full">
         <img
           src={getImageUrl(sketch.imagePath)}
-          alt={`Sketch ${index + 1}`}
+          alt={sketch.id}
           className="w-full h-full object-cover"
         />
       </div>
 
       {/* Hover overlay */}
       <div className="sketch-card-overlay group-hover:opacity-100">
-        {/* Top: sketch number */}
-        <div className="absolute top-3 left-3">
-          <span className="bg-black/60 text-swag-white text-xs font-bold px-2 py-1 rounded">
-            #{index + 1}
-          </span>
-        </div>
-
         {/* Resolution info */}
         {sketch.resolution && (
           <div className="absolute top-3 right-3">

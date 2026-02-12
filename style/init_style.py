@@ -319,6 +319,47 @@ def delete_style(
     return deleted_count
 
 
+def delete_images_from_style(
+    style_id: str,
+    filenames: List[str],
+    style_library_root: Path = Path("style/style_library"),
+    rag_images_dir: Path = Path("rag/reference_images")
+) -> int:
+    """
+    Delete specific images from a style's reference_images list and from disk.
+
+    Returns:
+        Number of images deleted from disk.
+
+    Raises:
+        ValueError: If style doesn't exist.
+    """
+    style_json_path = style_library_root / style_id / "style.json"
+
+    if not style_json_path.exists():
+        raise ValueError(f"Style '{style_id}' does not exist at {style_json_path}")
+
+    with open(style_json_path, 'r', encoding='utf-8') as f:
+        style_data = json.load(f)
+
+    current_images = style_data.get("reference_images", [])
+    filenames_set = set(filenames)
+
+    keep = [img for img in current_images if img not in filenames_set]
+    to_delete = [img for img in current_images if img in filenames_set]
+
+    deleted_count = 0
+    for image_filename in to_delete:
+        image_path = rag_images_dir / image_filename
+        if image_path.exists():
+            image_path.unlink()
+            deleted_count += 1
+
+    update_style_json(style_id, {"reference_images": keep}, style_library_root)
+
+    return deleted_count
+
+
 def validate_style(style_id: str) -> None:
     """
     Validate that a style can be loaded by StyleRegistry.
