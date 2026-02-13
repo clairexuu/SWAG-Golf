@@ -124,16 +124,16 @@ def main():
                 force=args.force
             )
             if count > 0:
-                print(f"  ✓ Indexed {count} images")
+                print(f"  [OK] Indexed {count} images")
                 total_images += count
         except Exception as e:
-            print(f"  ✗ Error: {e}")
+            print(f"  [ERROR] {e}")
             sys.exit(1)
 
     # Summary
     print()
     if total_images > 0:
-        print(f"✓ Total: {total_images} images indexed across {len(style_ids)} style(s)")
+        print(f"[OK] Total: {total_images} images indexed across {len(style_ids)} style(s)")
     else:
         print("No embeddings were built (caches already exist, use --force to rebuild)")
 

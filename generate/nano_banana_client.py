@@ -202,7 +202,7 @@ IMPORTANT OUTPUT REQUIREMENTS:
                     else:
                         raise RuntimeError(f"Gemini returned no content for image {index+1}")
                 else:
-                    raise RuntimeError(f"Gemini returned no candidates for image {index+1} — may have been blocked by safety filters")
+                    raise RuntimeError(f"Gemini returned no candidates for image {index+1} - may have been blocked by safety filters")
 
             except RuntimeError:
                 raise  # Don't retry our own errors from response validation above

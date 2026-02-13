@@ -36,7 +36,8 @@ Let's refactor our designs docs based on some updates I made. One rule is to alw
 Reflect this new feature in @design_doc/
 
 ## Deliverable
-**- Should be a downloaded web app through electron?**
+**Test python download**
+**Test Windows version**
 
 ## Future Implementations
 - User and login

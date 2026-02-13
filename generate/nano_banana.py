@@ -27,7 +27,7 @@ class NanaBananaAdapter(ImageModelAdapter):
         load_dotenv()
         try:
             self.client = NanaBananaClient(api_key=api_key)
-            print("✓ Nano Banana client initialized")
+            print("[OK] Nano Banana client initialized")
         except ValueError as e:
             print(f"WARNING: {e}")
             print("Will use placeholder images")
@@ -150,7 +150,7 @@ class NanaBananaAdapter(ImageModelAdapter):
         success_count = sum(1 for p in generated_paths if p is not None)
         fail_count = sum(1 for e in image_errors if e is not None)
         grayscale_msg = " (converted to grayscale)" if config.enforce_grayscale else ""
-        print(f"✓ Generated {success_count}/{len(image_data_list)} images{grayscale_msg}" +
+        print(f"[OK] Generated {success_count}/{len(image_data_list)} images{grayscale_msg}" +
               (f", {fail_count} failed" if fail_count else ""))
 
         return generated_paths, image_errors

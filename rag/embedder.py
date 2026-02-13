@@ -55,7 +55,7 @@ class ImageEmbedder:
         self.model.to(self.device)
         self.model.eval()  # Set to evaluation mode
 
-        print(f"✓ Embedding model loaded on {self.device} (dim={self.embedding_dim})")
+        print(f"[OK] Embedding model loaded on {self.device} (dim={self.embedding_dim})")
 
     def embed_image(self, image_path: str) -> List[float]:
         """

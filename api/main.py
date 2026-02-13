@@ -40,11 +40,18 @@ if reference_images_dir.exists():
 
 @app.get("/health")
 def health_check():
-    """Health check endpoint."""
+    """Health check endpoint with path diagnostics."""
+    cwd = str(Path.cwd())
+    style_lib = Path("style/style_library")
+    rag_dir = Path("rag/reference_images")
     return {
         "status": "ok",
         "service": "python-backend",
-        "version": "1.0.0"
+        "version": "1.0.0",
+        "cwd": cwd,
+        "style_library_exists": style_lib.exists(),
+        "style_library_path": str(style_lib.resolve()),
+        "rag_images_exists": rag_dir.exists(),
     }
 
 
@@ -58,10 +65,31 @@ app.include_router(generations.router)
 @app.on_event("startup")
 async def startup_event():
     """Initialize pipeline service on startup."""
+    cwd = Path.cwd()
     print("=" * 60)
     print("SWAG-Golf Python API Server")
     print("=" * 60)
-    print("Server starting on http://localhost:8000")
+    print(f"Working directory: {cwd}")
+    print(f"Server starting on http://localhost:8000")
+    print("")
+
+    # Verify critical directories exist
+    critical_dirs = {
+        "style/style_library": Path("style/style_library"),
+        "rag/reference_images": Path("rag/reference_images"),
+        "api": Path("api"),
+    }
+    for name, dir_path in critical_dirs.items():
+        resolved = dir_path.resolve()
+        if dir_path.exists():
+            print(f"  [OK] {name}: {resolved}")
+        else:
+            print(f"  [MISSING] {name}: (expected at {resolved})")
+            # Auto-create missing style_library so style creation doesn't fail
+            if name == "style/style_library":
+                dir_path.mkdir(parents=True, exist_ok=True)
+                print(f"    -> Created {resolved}")
+
     print("")
     print("Available endpoints:")
     print("  GET  http://localhost:8000/health")

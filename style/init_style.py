@@ -162,7 +162,7 @@ def update_style_json(
         # Validate with StyleRegistry
         registry = StyleRegistry()
         style = registry.get_style(style_id)
-        print(f"✓ Style validation passed: loaded '{style.name}' with {len(style.reference_images)} images")
+        print(f"[OK] Style validation passed: loaded '{style.name}' with {len(style.reference_images)} images")
 
     except Exception as e:
         raise RuntimeError(f"Failed to update style.json: {e}")
@@ -188,6 +188,11 @@ def create_new_style(
         )
 
     try:
+        # Log resolved paths for debugging
+        print(f"[create_new_style] cwd: {Path.cwd()}")
+        print(f"[create_new_style] style_library_root: {style_library_root.resolve()}")
+        print(f"[create_new_style] style_dir: {style_dir.resolve()}")
+
         # Create style directory
         style_dir.mkdir(parents=True, exist_ok=True)
 
@@ -211,7 +216,10 @@ def create_new_style(
         return style_json_path
 
     except Exception as e:
-        raise RuntimeError(f"Failed to create style: {e}")
+        raise RuntimeError(
+            f"Failed to create style: {e} "
+            f"(cwd={Path.cwd()}, style_dir={style_dir.resolve()})"
+        )
 
 
 def add_images_to_existing_style(
@@ -367,7 +375,7 @@ def validate_style(style_id: str) -> None:
     try:
         registry = StyleRegistry()
         style = registry.get_style(style_id)
-        print(f"✓ Style validation passed: loaded '{style.name}' with {len(style.reference_images)} images")
+        print(f"[OK] Style validation passed: loaded '{style.name}' with {len(style.reference_images)} images")
     except Exception as e:
         raise RuntimeError(f"Style validation failed: {e}")
 
@@ -419,7 +427,7 @@ def handle_create(args):
 
         # Validate images
         image_files = validate_image_folder(args.images)
-        print(f"✓ Validated {len(image_files)} images in source folder")
+        print(f"[OK] Validated {len(image_files)} images in source folder")
 
         # Create new style (this will create the directory)
         style_json_path = create_new_style(
@@ -429,19 +437,19 @@ def handle_create(args):
             image_files,
             visual_rules
         )
-        print(f"✓ Created style directory: style/style_library/{style_id}")
-        print(f"✓ Moved {len(image_files)} images to rag/reference_images/ (renamed with UUIDs)")
-        print(f"✓ Created {style_json_path} with {len(image_files)} reference images")
+        print(f"[OK] Created style directory: style/style_library/{style_id}")
+        print(f"[OK] Moved {len(image_files)} images to rag/reference_images/ (renamed with UUIDs)")
+        print(f"[OK] Created {style_json_path} with {len(image_files)} reference images")
 
         # Validate
         validate_style(style_id)
 
         # Success
-        print(f"\n✅ Successfully created style '{args.name}' (ID: {style_id})")
+        print(f"\n[OK] Successfully created style '{args.name}' (ID: {style_id})")
         print(f"   Reference images: {len(image_files)} images")
 
     except (ValueError, RuntimeError) as e:
-        print(f"\n❌ Error: {e}", file=sys.stderr)
+        print(f"\n[ERROR] Error: {e}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -452,7 +460,7 @@ def handle_add_images(args):
 
         # Validate images
         image_files = validate_image_folder(args.images)
-        print(f"✓ Validated {len(image_files)} new images")
+        print(f"[OK] Validated {len(image_files)} new images")
 
         # Check style exists and get current count
         style_json_path = Path("style/style_library") / args.style_id / "style.json"
@@ -463,21 +471,21 @@ def handle_add_images(args):
             style_data = json.load(f)
             current_count = len(style_data.get("reference_images", []))
 
-        print(f"✓ Style '{args.style_id}' exists (currently has {current_count} images)")
+        print(f"[OK] Style '{args.style_id}' exists (currently has {current_count} images)")
 
         # Add images
         added_count, skipped_count = add_images_to_existing_style(args.style_id, image_files)
-        print(f"✓ Moved {added_count} images to rag/reference_images/ (renamed with UUIDs)")
+        print(f"[OK] Moved {added_count} images to rag/reference_images/ (renamed with UUIDs)")
         if skipped_count:
-            print(f"✓ Skipped {skipped_count} duplicate image(s)")
-        print(f"✓ Updated style.json (now has {current_count + added_count} reference images)")
+            print(f"[OK] Skipped {skipped_count} duplicate image(s)")
+        print(f"[OK] Updated style.json (now has {current_count + added_count} reference images)")
 
         # Success
-        print(f"\n✅ Successfully added {added_count} images to style '{args.style_id}'")
+        print(f"\n[OK] Successfully added {added_count} images to style '{args.style_id}'")
         print(f"   Total reference images: {current_count + added_count}")
 
     except (ValueError, RuntimeError) as e:
-        print(f"\n❌ Error: {e}", file=sys.stderr)
+        print(f"\n[ERROR] Error: {e}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -487,10 +495,10 @@ def handle_mark_exclude(args):
         print(f"Marking images as do_not_use for style '{args.style_id}'...")
         mark_do_not_use_images(args.images, args.style_id)
     except NotImplementedError as e:
-        print(f"\n⚠ {e}", file=sys.stderr)
+        print(f"\n[WARN] {e}", file=sys.stderr)
         sys.exit(1)
     except (ValueError, RuntimeError) as e:
-        print(f"\n❌ Error: {e}", file=sys.stderr)
+        print(f"\n[ERROR] Error: {e}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -564,10 +572,10 @@ Example:
         elif args.command == 'mark-exclude':
             handle_mark_exclude(args)
     except KeyboardInterrupt:
-        print("\n\n⚠ Interrupted by user", file=sys.stderr)
+        print("\n\n[WARN] Interrupted by user", file=sys.stderr)
         sys.exit(130)
     except Exception as e:
-        print(f"\n❌ Unexpected error: {e}", file=sys.stderr)
+        print(f"\n[ERROR] Unexpected error: {e}", file=sys.stderr)
         import traceback
         traceback.print_exc()
         sys.exit(1)

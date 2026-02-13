@@ -129,6 +129,7 @@ export default function StudioPage() {
   }, [hasFeedback, selectedStyleId, sessionId, clearSketches, selectStyle]);
 
   const handleDownloadSketch = async (sketch: Sketch) => {
+    if (!sketch.imagePath) return;
     const imageUrl = getImageUrl(sketch.imagePath);
     try {
       const response = await fetch(imageUrl);

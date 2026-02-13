@@ -8,3 +8,5 @@ style/style_library/
 .env
 logs/
 ui_reference/
+release/
+python-standalone/

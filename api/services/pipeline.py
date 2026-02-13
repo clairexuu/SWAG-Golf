@@ -87,7 +87,7 @@ class PipelineService:
         name: str,
         description: str,
         visual_rules: Dict[str, Any],
-        image_files: List[Path] | None = None,
+        image_files: Optional[List[Path]] = None,
     ) -> Style:
         """
         Create a new style and optionally build embeddings for its images.

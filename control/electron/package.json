@@ -1,36 +1,115 @@
 {
   "name": "swag-concept-sketch-electron",
   "version": "1.0.0",
-  "description": "Electron wrapper for SWAG Concept Sketch Agent",
+  "description": "SWAG Concept Sketch Agent Desktop App",
   "main": "dist/main.js",
   "scripts": {
     "dev": "tsc && NODE_ENV=development electron .",
-    "build": "tsc && electron-builder",
-    "build:mac": "tsc && electron-builder --mac",
-    "build:win": "tsc && electron-builder --win"
+    "build:api": "node build-api.js",
+    "build": "npm run build:api && tsc && electron-builder",
+    "build:mac": "npm run build:api && tsc && electron-builder --mac",
+    "build:win": "npm run build:api && tsc && electron-builder --win --x64"
   },
   "dependencies": {
-    "electron-store": "^8.1.0"
+    "electron-store": "^8.1.0",
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "tar": "^6.2.1"
   },
   "devDependencies": {
     "electron": "^28.1.4",
     "electron-builder": "^24.9.1",
     "@types/node": "^20.11.5",
-    "typescript": "^5.3.3"
+    "@types/express": "^4.17.21",
+    "@types/cors": "^2.8.17",
+    "@types/tar": "^6.1.11",
+    "typescript": "^5.3.3",
+    "esbuild": "^0.19.0"
   },
   "build": {
     "appId": "com.swag.concept-sketch-agent",
     "productName": "SWAG Concept Sketch Agent",
     "files": [
-      "dist/**/*",
-      "../frontend/dist/**/*"
+      "dist/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../frontend/dist",
+        "to": "frontend"
+      },
+      {
+        "from": "../../.env",
+        "to": "data/.env"
+      },
+      {
+        "from": "../../requirements.txt",
+        "to": "data/requirements.txt"
+      },
+      {
+        "from": "../../rag/reference_images",
+        "to": "data/rag/reference_images",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "../../rag/cache",
+        "to": "data/rag/cache",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "../../style/style_library",
+        "to": "data/style/style_library",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "../../style/visual_rule_template.json",
+        "to": "data/style/visual_rule_template.json"
+      },
+      {
+        "from": "../../api",
+        "to": "data/api",
+        "filter": ["**/*.py"]
+      },
+      {
+        "from": "../../generate",
+        "to": "data/generate",
+        "filter": ["**/*.py"]
+      },
+      {
+        "from": "../../prompt",
+        "to": "data/prompt",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "../../rag",
+        "to": "data/rag",
+        "filter": ["**/*.py"]
+      },
+      {
+        "from": "../../style",
+        "to": "data/style",
+        "filter": ["**/*.py"]
+      },
+      {
+        "from": "../../feedback",
+        "to": "data/feedback",
+        "filter": ["**/*.py"]
+      }
     ],
     "mac": {
       "category": "public.app-category.graphics-design",
       "target": ["dmg", "zip"]
     },
     "win": {
-      "target": ["nsis", "zip"]
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "zip", "arch": ["x64"] }
+      ]
+    },
+    "nsis": {
+      "oneClick": true
+    },
+    "directories": {
+      "output": "release"
     }
   }
 }

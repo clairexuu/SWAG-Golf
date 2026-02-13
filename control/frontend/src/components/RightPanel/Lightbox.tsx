@@ -84,7 +84,7 @@ export default function Lightbox({ sketches, initialIndex, onClose, onDownload }
 
       {/* Image */}
       <img
-        src={getImageUrl(currentSketch.imagePath)}
+        src={currentSketch.imagePath ? getImageUrl(currentSketch.imagePath) : ''}
         alt={`Sketch ${currentIndex + 1}`}
         className="lightbox-image"
         onClick={(e) => e.stopPropagation()}

@@ -12,6 +12,6 @@
     "declaration": true,
     "sourceMap": true
   },
-  "include": ["main.ts", "preload.ts"],
+  "include": ["main.ts", "preload.ts", "paths.ts", "python-manager.ts", "python-downloader.ts"],
   "exclude": ["node_modules", "dist"]
 }
