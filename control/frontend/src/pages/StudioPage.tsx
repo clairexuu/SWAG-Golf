@@ -4,7 +4,7 @@ import StyleSelector from '../components/LeftPanel/StyleSelector';
 import PromptComposer from '../components/CenterPanel/PromptComposer';
 import SketchGrid from '../components/RightPanel/SketchGrid';
 import Lightbox from '../components/RightPanel/Lightbox';
-import { useGenerate } from '../hooks/useGenerate';
+import { useGenerationContext } from '../context/GenerationContext';
 import { useSidebar } from '../hooks/useSidebar';
 import { useToast } from '../hooks/useToast';
 import { useStyleContext } from '../context/StyleContext';
@@ -17,7 +17,7 @@ const getImageUrl = (imagePath: string) => `${API_BASE_URL}${imagePath}`;
 
 export default function StudioPage() {
   const { selectedStyleId, selectStyle } = useStyleContext();
-  const { generate, cancel, isGenerating, error, sketches, clearSketches } = useGenerate();
+  const { generate, cancel, isGenerating, error, sketches, clearSketches } = useGenerationContext();
   const { collapsed: sidebarCollapsed, toggle: toggleSidebar } = useSidebar();
   const toast = useToast();
 
@@ -25,7 +25,6 @@ export default function StudioPage() {
   const [hasFeedback, setHasFeedback] = useState(false);
   const [, setLastInput] = useState('');
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
-
   // Refs for beforeunload / unmount flush
   const sessionIdRef = useRef(sessionId);
   const selectedStyleIdRef = useRef(selectedStyleId);

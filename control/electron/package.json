@@ -6,9 +6,9 @@
   "scripts": {
     "dev": "tsc && NODE_ENV=development electron .",
     "build:api": "node build-api.js",
-    "build": "npm run build:api && tsc && electron-builder",
-    "build:mac": "npm run build:api && tsc && electron-builder --mac",
-    "build:win": "npm run build:api && tsc && electron-builder --win --x64"
+    "build": "npm run build:mac && npm run build:win",
+    "build:mac": "npm run build:api && tsc && electron-builder --mac -c.directories.output=release/mac",
+    "build:win": "npm run build:api && tsc && electron-builder --win --x64 -c.directories.output=release/win"
   },
   "dependencies": {
     "electron-store": "^8.1.0",
@@ -29,6 +29,7 @@
   "build": {
     "appId": "com.swag.concept-sketch-agent",
     "productName": "SWAG Concept Sketch Agent",
+    "afterSign": "notarize.js",
     "files": [
       "dist/**/*"
     ],
@@ -97,7 +98,10 @@
     ],
     "mac": {
       "category": "public.app-category.graphics-design",
-      "target": ["dmg", "zip"]
+      "target": ["dmg", "zip"],
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+      "notarize": false
     },
     "win": {
       "target": [
