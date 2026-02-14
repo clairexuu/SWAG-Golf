@@ -118,14 +118,13 @@ exports.default = async function notarizing(context) {
     try { fs.unlinkSync(zipPath); } catch (_) {}
   }
 
-  // Step 3: Poll for completion
-  console.log('Notarize: Waiting for Apple to process (this may take several minutes)...');
-  const maxWait = 30 * 60 * 1000; // 30 minutes
+  // Step 3: Poll for completion (no timeout — waits until Apple finishes or rejects)
+  console.log('Notarize: Waiting for Apple to process...');
   const pollInterval = 15000; // 15 seconds
   const startTime = Date.now();
   let finalStatus = 'In Progress';
 
-  while (Date.now() - startTime < maxWait) {
+  while (true) {
     await sleep(pollInterval);
 
     try {
@@ -167,10 +166,6 @@ exports.default = async function notarizing(context) {
       const elapsed = Math.round((Date.now() - startTime) / 1000);
       console.warn(`Notarize: Poll error (${elapsed}s elapsed), retrying...`, err.message);
     }
-  }
-
-  if (finalStatus !== 'Accepted') {
-    throw new Error(`Notarization timed out after 30 minutes. Last status: ${finalStatus}`);
   }
 
   // Step 4: Staple the ticket to the .app

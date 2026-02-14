@@ -3,11 +3,40 @@
 // the standalone build is already isolated to this app).
 
 import { spawn, ChildProcess, SpawnOptions } from 'child_process';
-import { createHash } from 'crypto';
+import { createHash, createDecipheriv } from 'crypto';
 import path from 'path';
 import fs from 'fs';
 import { BrowserWindow } from 'electron';
 import { isStandalonePythonInstalled, getStandalonePythonPaths, downloadStandalonePython } from './python-downloader';
+
+// Must match the passphrase used in encrypt-env.js
+const ENV_PASSPHRASE = 'swag-concept-sketch-agent-2025';
+
+/**
+ * Decrypt an .env.encrypted file and return all key-value pairs
+ * (both the plaintext config and the decrypted sensitive keys).
+ */
+export function decryptEnvFile(filePath: string): Record<string, string> {
+  if (!fs.existsSync(filePath)) return {};
+
+  const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+  const result: Record<string, string> = { ...(raw.config || {}) };
+
+  if (raw.data && raw.iv && raw.authTag) {
+    const key = createHash('sha256').update(ENV_PASSPHRASE).digest();
+    const iv = Buffer.from(raw.iv, 'hex');
+    const authTag = Buffer.from(raw.authTag, 'hex');
+    const encrypted = Buffer.from(raw.data, 'hex');
+
+    const decipher = createDecipheriv('aes-256-gcm', key, iv);
+    decipher.setAuthTag(authTag);
+    const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
+    const sensitive = JSON.parse(decrypted.toString('utf-8'));
+    Object.assign(result, sensitive);
+  }
+
+  return result;
+}
 
 export interface PythonConfig {
   pythonBin: string;        // Standalone Python binary
@@ -179,7 +208,10 @@ export function getRecentPythonOutput(): string {
  * Start the Python FastAPI backend as a child process.
  */
 export function startPythonBackend(config: PythonConfig): ChildProcess {
-  const envVars = parseEnvFile(config.envFilePath);
+  // Load env vars: use decryptEnvFile for .env.encrypted, parseEnvFile for plain .env
+  const envVars = config.envFilePath.endsWith('.env.encrypted')
+    ? decryptEnvFile(config.envFilePath)
+    : parseEnvFile(config.envFilePath);
   recentPythonOutput = [];
 
   const pythonBinDir = path.dirname(config.pythonBin);

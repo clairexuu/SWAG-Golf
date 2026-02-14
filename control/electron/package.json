@@ -6,9 +6,10 @@
   "scripts": {
     "dev": "tsc && NODE_ENV=development electron .",
     "build:api": "node build-api.js",
+    "encrypt-env": "node encrypt-env.js",
     "build": "npm run build:mac && npm run build:win",
-    "build:mac": "npm run build:api && tsc && electron-builder --mac -c.directories.output=release/mac",
-    "build:win": "npm run build:api && tsc && electron-builder --win --x64 -c.directories.output=release/win"
+    "build:mac": "npm run encrypt-env && npm run build:api && tsc && electron-builder --mac -c.directories.output=release/mac",
+    "build:win": "npm run encrypt-env && npm run build:api && tsc && electron-builder --win --x64 -c.directories.output=release/win"
   },
   "dependencies": {
     "electron-store": "^8.1.0",
@@ -39,8 +40,8 @@
         "to": "frontend"
       },
       {
-        "from": "../../.env",
-        "to": "data/.env"
+        "from": "../../.env.encrypted",
+        "to": "data/.env.encrypted"
       },
       {
         "from": "../../requirements.txt",

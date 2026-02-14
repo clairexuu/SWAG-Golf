@@ -6,6 +6,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.decryptEnvFile = decryptEnvFile;
 exports.findOrDownloadPython = findOrDownloadPython;
 exports.ensurePythonDeps = ensurePythonDeps;
 exports.getRecentPythonOutput = getRecentPythonOutput;
@@ -16,6 +17,30 @@ const crypto_1 = require("crypto");
 const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 const python_downloader_1 = require("./python-downloader");
+// Must match the passphrase used in encrypt-env.js
+const ENV_PASSPHRASE = 'swag-concept-sketch-agent-2025';
+/**
+ * Decrypt an .env.encrypted file and return all key-value pairs
+ * (both the plaintext config and the decrypted sensitive keys).
+ */
+function decryptEnvFile(filePath) {
+    if (!fs_1.default.existsSync(filePath))
+        return {};
+    const raw = JSON.parse(fs_1.default.readFileSync(filePath, 'utf-8'));
+    const result = { ...(raw.config || {}) };
+    if (raw.data && raw.iv && raw.authTag) {
+        const key = (0, crypto_1.createHash)('sha256').update(ENV_PASSPHRASE).digest();
+        const iv = Buffer.from(raw.iv, 'hex');
+        const authTag = Buffer.from(raw.authTag, 'hex');
+        const encrypted = Buffer.from(raw.data, 'hex');
+        const decipher = (0, crypto_1.createDecipheriv)('aes-256-gcm', key, iv);
+        decipher.setAuthTag(authTag);
+        const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
+        const sensitive = JSON.parse(decrypted.toString('utf-8'));
+        Object.assign(result, sensitive);
+    }
+    return result;
+}
 /**
  * Ensure standalone Python is available. Downloads it if not present.
  * This app always uses its own managed Python build — never system Python.
@@ -148,7 +173,10 @@ function getRecentPythonOutput() {
  * Start the Python FastAPI backend as a child process.
  */
 function startPythonBackend(config) {
-    const envVars = parseEnvFile(config.envFilePath);
+    // Load env vars: use decryptEnvFile for .env.encrypted, parseEnvFile for plain .env
+    const envVars = config.envFilePath.endsWith('.env.encrypted')
+        ? decryptEnvFile(config.envFilePath)
+        : parseEnvFile(config.envFilePath);
     recentPythonOutput = [];
     const pythonBinDir = path_1.default.dirname(config.pythonBin);
     console.log(`[Python] Starting: ${config.pythonBin} -m uvicorn api.main:app`);

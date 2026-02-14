@@ -6,7 +6,9 @@ cache/
 rag/reference_images
 style/style_library/
 .env
+.env.encrypted
 logs/
 ui_reference/
 release/
 python-standalone/
+*.png

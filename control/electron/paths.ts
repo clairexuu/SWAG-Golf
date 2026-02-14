@@ -115,14 +115,14 @@ export function initializeUserData(): void {
     }
   }
 
-  // Copy .env file
-  const envSrc = path.join(resourceData, '.env');
+  // Copy .env.encrypted file
+  const envSrc = path.join(resourceData, '.env.encrypted');
   if (fs.existsSync(envSrc)) {
     try {
-      fs.copyFileSync(envSrc, path.join(userDataDir, '.env'));
-      console.log('[Paths]   ✓ Copied .env');
+      fs.copyFileSync(envSrc, path.join(userDataDir, '.env.encrypted'));
+      console.log('[Paths]   ✓ Copied .env.encrypted');
     } catch (err) {
-      console.error(`[Paths]   ✗ Failed to copy .env: ${err}`);
+      console.error(`[Paths]   ✗ Failed to copy .env.encrypted: ${err}`);
     }
   }
 
@@ -163,7 +163,7 @@ function updateAppConfigFiles(userDataDir: string): void {
   const resourceData = path.join(process.resourcesPath, 'data');
   if (!fs.existsSync(resourceData)) return;
 
-  const configFiles = ['requirements.txt', '.env'];
+  const configFiles = ['requirements.txt', '.env.encrypted'];
   for (const file of configFiles) {
     const src = path.join(resourceData, file);
     const dest = path.join(userDataDir, file);

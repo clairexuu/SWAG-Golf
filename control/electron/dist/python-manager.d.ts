@@ -1,5 +1,10 @@
 import { ChildProcess } from 'child_process';
 import { BrowserWindow } from 'electron';
+/**
+ * Decrypt an .env.encrypted file and return all key-value pairs
+ * (both the plaintext config and the decrypted sensitive keys).
+ */
+export declare function decryptEnvFile(filePath: string): Record<string, string>;
 export interface PythonConfig {
     pythonBin: string;
     dataDir: string;

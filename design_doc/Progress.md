@@ -30,7 +30,6 @@
 - TEST **error log** 
 
 ## Electron
-**- need an Icon**
 **- encrypt API key**
 
 ## In @design_doc

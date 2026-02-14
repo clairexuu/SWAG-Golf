@@ -112,15 +112,15 @@ function initializeUserData() {
             console.warn(`[Paths]   ⚠ Source not found, skipping: ${src}`);
         }
     }
-    // Copy .env file
-    const envSrc = path_1.default.join(resourceData, '.env');
+    // Copy .env.encrypted file
+    const envSrc = path_1.default.join(resourceData, '.env.encrypted');
     if (fs_1.default.existsSync(envSrc)) {
         try {
-            fs_1.default.copyFileSync(envSrc, path_1.default.join(userDataDir, '.env'));
-            console.log('[Paths]   ✓ Copied .env');
+            fs_1.default.copyFileSync(envSrc, path_1.default.join(userDataDir, '.env.encrypted'));
+            console.log('[Paths]   ✓ Copied .env.encrypted');
         }
         catch (err) {
-            console.error(`[Paths]   ✗ Failed to copy .env: ${err}`);
+            console.error(`[Paths]   ✗ Failed to copy .env.encrypted: ${err}`);
         }
     }
     // Copy requirements.txt
@@ -157,7 +157,7 @@ function updateAppConfigFiles(userDataDir) {
     const resourceData = path_1.default.join(process.resourcesPath, 'data');
     if (!fs_1.default.existsSync(resourceData))
         return;
-    const configFiles = ['requirements.txt', '.env'];
+    const configFiles = ['requirements.txt', '.env.encrypted'];
     for (const file of configFiles) {
         const src = path_1.default.join(resourceData, file);
         const dest = path_1.default.join(userDataDir, file);

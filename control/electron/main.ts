@@ -141,7 +141,9 @@ async function startup(): Promise<void> {
     const pythonConfig: PythonConfig = {
       pythonBin: pythonBinary,
       dataDir,
-      envFilePath: path.join(dataDir, '.env'),
+      envFilePath: isDev
+        ? path.join(dataDir, '.env')
+        : path.join(dataDir, '.env.encrypted'),
       requirementsPath: path.join(dataDir, 'requirements.txt'),
       port: 8000,
     };
