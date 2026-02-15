@@ -1,12 +1,15 @@
 // notarize.js — electron-builder afterSign hook
-// Notarizes the macOS .app bundle with Apple's notarytool service.
-// Uses xcrun notarytool directly (submit + poll + staple) for reliability.
-// Works around a SIGBUS crash in notarytool by extracting the submission ID
-// from partial output even if the process crashes after uploading.
+// Notarizes the macOS .app bundle using Apple's Notary REST API.
+// Bypasses xcrun notarytool entirely (avoids SIGBUS crash).
 
-const { execFile, execFileSync } = require('child_process');
+const { execFileSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
+const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+
+const NOTARY_API_BASE = 'https://appstoreconnect.apple.com/notary/v2';
 
 // Minimal .env parser (matches parseEnvFile in python-manager.ts)
 function loadEnv(envPath) {
@@ -29,29 +32,40 @@ function loadEnv(envPath) {
   return env;
 }
 
+function generateJwt(keyId, issuerId, privateKey) {
+  const now = Math.floor(Date.now() / 1000);
+  const payload = { iss: issuerId, aud: 'appstoreconnect-v1', iat: now, exp: now + 900 };
+  return jwt.sign(payload, privateKey, { algorithm: 'ES256', header: { alg: 'ES256', kid: keyId, typ: 'JWT' } });
+}
+
+function sha256File(filePath) {
+  const hash = crypto.createHash('sha256');
+  const data = fs.readFileSync(filePath);
+  hash.update(data);
+  return hash.digest('hex');
+}
+
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Promise wrapper that resolves with output even on non-zero exit / signal
-function execFileCapture(cmd, args, opts = {}) {
-  return new Promise((resolve) => {
-    execFile(cmd, args, opts, (error, stdout, stderr) => {
-      resolve({
-        stdout: stdout || '',
-        stderr: stderr || '',
-        code: error ? (error.code || null) : 0,
-        signal: error ? (error.signal || null) : null,
-        error,
-      });
-    });
-  });
-}
+async function apiRequest(method, urlPath, token, body) {
+  const url = `${NOTARY_API_BASE}${urlPath}`;
+  const opts = {
+    method,
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+  };
+  if (body) opts.body = JSON.stringify(body);
 
-// Extract UUID submission ID from notarytool text output
-function extractSubmissionId(text) {
-  const match = text.match(/id:\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
-  return match ? match[1] : null;
+  const res = await fetch(url, opts);
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`Notary API ${method} ${urlPath} failed (${res.status}): ${text}`);
+  }
+  return JSON.parse(text);
 }
 
 // electron-builder afterSign hook
@@ -66,109 +80,117 @@ exports.default = async function notarizing(context) {
   const envPath = path.join(__dirname, '.env');
   const envVars = loadEnv(envPath);
 
-  const appleId = process.env.APPLE_ID || envVars.APPLE_ID;
-  const appleIdPassword = process.env.APPLE_APP_SPECIFIC_PASSWORD || envVars.APPLE_APP_SPECIFIC_PASSWORD;
-  const teamId = process.env.APPLE_TEAM_ID || envVars.APPLE_TEAM_ID;
+  const keyId = process.env.APPLE_API_KEY_ID || envVars.APPLE_API_KEY_ID;
+  const issuerId = process.env.APPLE_API_ISSUER_ID || envVars.APPLE_API_ISSUER_ID;
+  const keyPathRaw = process.env.APPLE_API_KEY_PATH || envVars.APPLE_API_KEY_PATH;
 
-  if (!appleId || !appleIdPassword || !teamId) {
-    console.warn('Notarize: Missing Apple credentials. Skipping notarization.');
+  if (!keyId || !issuerId || !keyPathRaw) {
+    console.warn('Notarize: Missing Apple API key credentials (APPLE_API_KEY_ID, APPLE_API_ISSUER_ID, APPLE_API_KEY_PATH). Skipping notarization.');
     return;
   }
+
+  const keyPath = path.resolve(__dirname, keyPathRaw);
+  if (!fs.existsSync(keyPath)) {
+    throw new Error(`Notarize: Private key file not found: ${keyPath}`);
+  }
+  const privateKey = fs.readFileSync(keyPath, 'utf-8');
 
   const appName = context.packager.appInfo.productFilename;
   const appPath = path.join(appOutDir, `${appName}.app`);
 
-  console.log(`Notarize: Submitting ${appPath} to Apple notary service...`);
+  console.log(`Notarize: Submitting ${appPath} via Apple Notary REST API...`);
 
-  // Step 1: Zip the .app for submission
+  // Step 1: Generate JWT
+  const token = generateJwt(keyId, issuerId, privateKey);
+  console.log('Notarize: JWT generated.');
+
+  // Step 2: Zip the .app for submission
   const zipPath = path.join(appOutDir, `${appName}.zip`);
   console.log('Notarize: Zipping app bundle...');
   execFileSync('ditto', ['-c', '-k', '--sequesterRsrc', '--keepParent',
     `${appName}.app`, zipPath], { cwd: appOutDir, stdio: 'inherit' });
 
-  // Step 2: Submit to Apple
-  // Note: notarytool may crash with SIGBUS after successful upload (known issue).
-  // We extract the submission ID from whatever output was produced.
-  console.log('Notarize: Uploading to Apple notary service...');
-  let submissionId;
   try {
-    const result = await execFileCapture('xcrun', [
-      'notarytool', 'submit', zipPath,
-      '--apple-id', appleId,
-      '--password', appleIdPassword,
-      '--team-id', teamId,
-    ], { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024, timeout: 300000 });
+    // Step 3: Compute SHA-256 and submit to Apple
+    console.log('Notarize: Computing SHA-256...');
+    const sha256 = sha256File(zipPath);
+    console.log(`Notarize: SHA-256 = ${sha256}`);
 
-    const combined = result.stdout + '\n' + result.stderr;
-    submissionId = extractSubmissionId(combined);
+    console.log('Notarize: Creating submission...');
+    const submitRes = await apiRequest('POST', '/submissions', token, {
+      submissionName: `${appName}.zip`,
+      sha256,
+    });
 
-    if (result.signal) {
-      console.warn(`Notarize: notarytool crashed with signal ${result.signal} (known issue).`);
-    }
-
-    if (!submissionId) {
-      console.error('Notarize: Could not extract submission ID from notarytool output.');
-      console.error('Notarize: stdout:', result.stdout || '(empty)');
-      console.error('Notarize: stderr:', result.stderr || '(empty)');
-      throw new Error('Failed to submit for notarization: no submission ID received.');
-    }
-
+    const submissionId = submitRes.data.id;
+    const attrs = submitRes.data.attributes;
     console.log(`Notarize: Submission ID = ${submissionId}`);
+
+    // Step 4: Upload zip to S3
+    console.log('Notarize: Uploading to Apple S3...');
+    const s3 = new S3Client({
+      region: 'us-west-2',
+      credentials: {
+        accessKeyId: attrs.awsAccessKeyId,
+        secretAccessKey: attrs.awsSecretAccessKey,
+        sessionToken: attrs.awsSessionToken,
+      },
+    });
+
+    const zipData = fs.readFileSync(zipPath);
+    await s3.send(new PutObjectCommand({
+      Bucket: attrs.bucket,
+      Key: attrs.object,
+      Body: zipData,
+    }));
+    console.log('Notarize: Upload complete.');
+
+    // Step 5: Poll for status
+    console.log('Notarize: Waiting for Apple to process...');
+    const pollInterval = 15000;
+    const timeout = 30 * 60 * 1000;
+    const startTime = Date.now();
+
+    while (true) {
+      if (Date.now() - startTime > timeout) {
+        throw new Error('Notarize: Timed out waiting for Apple to process (30 minutes).');
+      }
+
+      await sleep(pollInterval);
+
+      // Regenerate JWT if we've been polling a while (tokens expire after 15 min)
+      const currentToken = (Date.now() - startTime > 10 * 60 * 1000)
+        ? generateJwt(keyId, issuerId, privateKey)
+        : token;
+
+      const statusRes = await apiRequest('GET', `/submissions/${submissionId}`, currentToken);
+      const status = statusRes.data.attributes.status;
+      const elapsed = Math.round((Date.now() - startTime) / 1000);
+
+      if (status === 'Accepted') {
+        console.log(`Notarize: Apple accepted the submission. (${elapsed}s)`);
+        break;
+      } else if (status === 'Invalid' || status === 'Rejected') {
+        // Try to fetch the log
+        try {
+          const logRes = await apiRequest('GET', `/submissions/${submissionId}/logs`, currentToken);
+          const logUrl = logRes.data.attributes.developerLogUrl;
+          if (logUrl) {
+            const logFetch = await fetch(logUrl);
+            const logText = await logFetch.text();
+            console.error('Notarize: Apple rejection log:\n', logText);
+          }
+        } catch (_) {}
+        throw new Error(`Notarize: Notarization failed with status: ${status}`);
+      }
+
+      console.log(`Notarize: Still processing... (${elapsed}s elapsed, status: ${status})`);
+    }
   } finally {
     try { fs.unlinkSync(zipPath); } catch (_) {}
   }
 
-  // Step 3: Poll for completion (no timeout — waits until Apple finishes or rejects)
-  console.log('Notarize: Waiting for Apple to process...');
-  const pollInterval = 15000; // 15 seconds
-  const startTime = Date.now();
-  let finalStatus = 'In Progress';
-
-  while (true) {
-    await sleep(pollInterval);
-
-    try {
-      const result = await execFileCapture('xcrun', [
-        'notarytool', 'info', submissionId,
-        '--apple-id', appleId,
-        '--password', appleIdPassword,
-        '--team-id', teamId,
-      ], { encoding: 'utf-8', timeout: 60000 });
-
-      const combined = result.stdout + '\n' + result.stderr;
-
-      // Parse status from text output (e.g., "status: Accepted")
-      const statusMatch = combined.match(/status:\s*(.+)/i);
-      if (statusMatch) {
-        finalStatus = statusMatch[1].trim();
-      }
-
-      if (finalStatus === 'Accepted') {
-        console.log('Notarize: Apple accepted the submission.');
-        break;
-      } else if (finalStatus === 'Invalid' || finalStatus === 'Rejected') {
-        try {
-          const logResult = await execFileCapture('xcrun', [
-            'notarytool', 'log', submissionId,
-            '--apple-id', appleId,
-            '--password', appleIdPassword,
-            '--team-id', teamId,
-          ], { encoding: 'utf-8', timeout: 60000 });
-          console.error('Notarize: Notarization log:\n', logResult.stdout);
-        } catch (_) {}
-        throw new Error(`Notarization failed with status: ${finalStatus}`);
-      }
-
-      const elapsed = Math.round((Date.now() - startTime) / 1000);
-      console.log(`Notarize: Still processing... (${elapsed}s elapsed, status: ${finalStatus})`);
-    } catch (err) {
-      if (err.message && err.message.includes('Notarization failed')) throw err;
-      const elapsed = Math.round((Date.now() - startTime) / 1000);
-      console.warn(`Notarize: Poll error (${elapsed}s elapsed), retrying...`, err.message);
-    }
-  }
-
-  // Step 4: Staple the ticket to the .app
+  // Step 6: Staple the ticket to the .app
   console.log('Notarize: Stapling notarization ticket...');
   execFileSync('xcrun', ['stapler', 'staple', appPath], { stdio: 'inherit' });
 

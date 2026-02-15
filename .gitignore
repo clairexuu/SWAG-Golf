@@ -7,8 +7,10 @@ rag/reference_images
 style/style_library/
 .env
 .env.encrypted
+*.p8
 logs/
 ui_reference/
 release/
 python-standalone/
 *.png
+*.p8

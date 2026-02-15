@@ -12,20 +12,22 @@
     "build:win": "npm run encrypt-env && npm run build:api && tsc && electron-builder --win --x64 -c.directories.output=release/win"
   },
   "dependencies": {
+    "cors": "^2.8.5",
     "electron-store": "^8.1.0",
     "express": "^4.18.2",
-    "cors": "^2.8.5",
     "tar": "^6.2.1"
   },
   "devDependencies": {
+    "@aws-sdk/client-s3": "^3.967.0",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.11.5",
+    "@types/tar": "^6.1.11",
     "electron": "^28.1.4",
     "electron-builder": "^24.9.1",
-    "@types/node": "^20.11.5",
-    "@types/express": "^4.17.21",
-    "@types/cors": "^2.8.17",
-    "@types/tar": "^6.1.11",
-    "typescript": "^5.3.3",
-    "esbuild": "^0.19.0"
+    "esbuild": "^0.19.0",
+    "jsonwebtoken": "^9.0.3",
+    "typescript": "^5.3.3"
   },
   "build": {
     "appId": "com.swag.concept-sketch-agent",
@@ -50,17 +52,23 @@
       {
         "from": "../../rag/reference_images",
         "to": "data/rag/reference_images",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": "../../rag/cache",
         "to": "data/rag/cache",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": "../../style/style_library",
         "to": "data/style/style_library",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": "../../style/visual_rule_template.json",
@@ -69,45 +77,70 @@
       {
         "from": "../../api",
         "to": "data/api",
-        "filter": ["**/*.py"]
+        "filter": [
+          "**/*.py"
+        ]
       },
       {
         "from": "../../generate",
         "to": "data/generate",
-        "filter": ["**/*.py"]
+        "filter": [
+          "**/*.py"
+        ]
       },
       {
         "from": "../../prompt",
         "to": "data/prompt",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": "../../rag",
         "to": "data/rag",
-        "filter": ["**/*.py"]
+        "filter": [
+          "**/*.py"
+        ]
       },
       {
         "from": "../../style",
         "to": "data/style",
-        "filter": ["**/*.py"]
+        "filter": [
+          "**/*.py"
+        ]
       },
       {
         "from": "../../feedback",
         "to": "data/feedback",
-        "filter": ["**/*.py"]
+        "filter": [
+          "**/*.py"
+        ]
       }
     ],
     "mac": {
       "category": "public.app-category.graphics-design",
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.inherit.plist",
       "notarize": false
     },
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"] },
-        { "target": "zip", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
       ]
     },
     "nsis": {
