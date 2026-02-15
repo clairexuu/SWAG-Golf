@@ -19,7 +19,7 @@ The system is explicitly designed to:
 7. Feedback & Learning: User feedback improves future generations via in-session context (short-term) and persistent GPT-summarized style learning (long-term)
 
 ## Technical Architecture
-Frontend: Web app
+Frontend: Web app wrapped in Electron
 Backend: Prompt orchestration + image RAG service
 LLM: ChatGPT as Prompt Compiler
 Image Model: Nano Banana (model-agnostic via adapter layer)
@@ -36,6 +36,7 @@ Feedback & Learning Loop --> @design_doc/Feedback_Learning_Loop.md
 
 To Step --> @design_doc/Backend_SetUp.md
 To Start Dev --> @design_doc/Frontend.md
+To Build Electron --> @design_doc/Electron.md
 Issue and Progress Tracker --> @design_doc/Progress.md
 
 ## Folder Structure
