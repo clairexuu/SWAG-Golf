@@ -4,6 +4,7 @@
 
 import { spawn, ChildProcess, SpawnOptions } from 'child_process';
 import { createHash, createDecipheriv } from 'crypto';
+import net from 'net';
 import path from 'path';
 import fs from 'fs';
 import { BrowserWindow } from 'electron';
@@ -194,8 +195,16 @@ function parseEnvFile(envPath: string): Record<string, string> {
   return env;
 }
 
-// Collects recent Python stderr output for error reporting
+// ---------------------------------------------------------------------------
+// Python process state & logging
+// ---------------------------------------------------------------------------
+
+const MAX_RECENT_OUTPUT = 50;
 let recentPythonOutput: string[] = [];
+let pythonExited = false;
+let pythonExitCode: number | null = null;
+let logFilePath: string | null = null;
+let logStream: fs.WriteStream | null = null;
 
 /**
  * Get recent Python output (for diagnostics when health check fails).
@@ -205,19 +214,94 @@ export function getRecentPythonOutput(): string {
 }
 
 /**
+ * Returns the path to the Python backend log file (if logging is active).
+ */
+export function getPythonLogPath(): string | null {
+  return logFilePath;
+}
+
+/**
+ * Returns true if the Python process has exited (crashed or stopped).
+ */
+export function isPythonProcessAlive(): boolean {
+  return !pythonExited;
+}
+
+/**
+ * Returns the exit code of the Python process, or null if still running.
+ */
+export function getPythonExitCode(): number | null {
+  return pythonExitCode;
+}
+
+function appendLog(line: string): void {
+  recentPythonOutput.push(line);
+  if (recentPythonOutput.length > MAX_RECENT_OUTPUT) {
+    recentPythonOutput.shift();
+  }
+  if (logStream) {
+    logStream.write(`${new Date().toISOString()} ${line}\n`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Port conflict detection
+// ---------------------------------------------------------------------------
+
+/**
+ * Check if a TCP port is already in use.
+ * Returns true if the port is occupied.
+ */
+export function isPortInUse(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    socket.once('connect', () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.once('error', () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.connect(port, '127.0.0.1');
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Python backend lifecycle
+// ---------------------------------------------------------------------------
+
+/**
  * Start the Python FastAPI backend as a child process.
+ * Logs all output to {dataDir}/python-backend.log.
  */
 export function startPythonBackend(config: PythonConfig): ChildProcess {
   // Load env vars: use decryptEnvFile for .env.encrypted, parseEnvFile for plain .env
   const envVars = config.envFilePath.endsWith('.env.encrypted')
     ? decryptEnvFile(config.envFilePath)
     : parseEnvFile(config.envFilePath);
+
+  // Reset state for fresh start
   recentPythonOutput = [];
+  pythonExited = false;
+  pythonExitCode = null;
+
+  // Set up log file (truncate on each fresh start)
+  logFilePath = path.join(config.dataDir, 'python-backend.log');
+  if (logStream) {
+    logStream.end();
+  }
+  logStream = fs.createWriteStream(logFilePath, { flags: 'w' });
+  appendLog(`Starting Python backend at ${new Date().toISOString()}`);
+  appendLog(`Python binary: ${config.pythonBin}`);
+  appendLog(`Working directory: ${config.dataDir}`);
+  appendLog(`Port: ${config.port}`);
 
   const pythonBinDir = path.dirname(config.pythonBin);
 
   console.log(`[Python] Starting: ${config.pythonBin} -m uvicorn api.main:app`);
   console.log(`[Python] cwd: ${config.dataDir}`);
+  console.log(`[Python] Log file: ${logFilePath}`);
 
   const proc = spawn(config.pythonBin, [
     '-m', 'uvicorn',
@@ -238,46 +322,73 @@ export function startPythonBackend(config: PythonConfig): ChildProcess {
   proc.stdout?.on('data', (data: Buffer) => {
     const line = data.toString().trim();
     console.log(`[Python] ${line}`);
-    recentPythonOutput.push(line);
+    appendLog(`[stdout] ${line}`);
   });
 
   proc.stderr?.on('data', (data: Buffer) => {
     const line = data.toString().trim();
     console.error(`[Python] ${line}`);
-    recentPythonOutput.push(line);
+    appendLog(`[stderr] ${line}`);
   });
 
   proc.on('error', (err) => {
     console.error('[Python] Failed to start:', err);
-    recentPythonOutput.push(`SPAWN ERROR: ${err.message}`);
+    appendLog(`SPAWN ERROR: ${err.message}`);
+    pythonExited = true;
+    pythonExitCode = -1;
   });
 
   proc.on('exit', (code) => {
     console.log(`[Python] Process exited with code ${code}`);
-    recentPythonOutput.push(`EXITED with code ${code}`);
+    appendLog(`EXITED with code ${code}`);
+    pythonExited = true;
+    pythonExitCode = code;
   });
 
   return proc;
 }
 
+// ---------------------------------------------------------------------------
+// Health check
+// ---------------------------------------------------------------------------
+
+export type HealthCheckResult =
+  | { status: 'healthy' }
+  | { status: 'crashed'; exitCode: number | null }
+  | { status: 'timeout' };
+
 /**
  * Wait for the Python backend to respond to health checks.
+ * Returns early if the process crashes (no point waiting 90s).
+ * Updates the splash window with elapsed time.
  */
 export async function waitForPythonHealth(
   port: number = 8000,
   maxWaitMs: number = 30_000,
-): Promise<boolean> {
+  splashWindow?: BrowserWindow | null,
+): Promise<HealthCheckResult> {
   const startTime = Date.now();
   while (Date.now() - startTime < maxWaitMs) {
+    // Early exit: process already crashed
+    if (pythonExited) {
+      return { status: 'crashed', exitCode: pythonExitCode };
+    }
+
     try {
       const res = await fetch(`http://127.0.0.1:${port}/health`);
-      if (res.ok) return true;
+      if (res.ok) return { status: 'healthy' };
     } catch {
       // Not ready yet
     }
+
+    // Update splash with elapsed time
+    const elapsed = Math.round((Date.now() - startTime) / 1000);
+    sendSplashMessage(splashWindow, `Starting Python backend... (${elapsed}s elapsed)`);
+
     await new Promise((r) => setTimeout(r, 1000));
   }
-  return false;
+
+  return { status: 'timeout' };
 }
 
 /**

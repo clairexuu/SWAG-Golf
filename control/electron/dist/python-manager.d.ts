@@ -28,10 +28,38 @@ export declare function ensurePythonDeps(config: PythonConfig, splashWindow?: Br
  */
 export declare function getRecentPythonOutput(): string;
 /**
+ * Returns the path to the Python backend log file (if logging is active).
+ */
+export declare function getPythonLogPath(): string | null;
+/**
+ * Returns true if the Python process has exited (crashed or stopped).
+ */
+export declare function isPythonProcessAlive(): boolean;
+/**
+ * Returns the exit code of the Python process, or null if still running.
+ */
+export declare function getPythonExitCode(): number | null;
+/**
+ * Check if a TCP port is already in use.
+ * Returns true if the port is occupied.
+ */
+export declare function isPortInUse(port: number): Promise<boolean>;
+/**
  * Start the Python FastAPI backend as a child process.
+ * Logs all output to {dataDir}/python-backend.log.
  */
 export declare function startPythonBackend(config: PythonConfig): ChildProcess;
+export type HealthCheckResult = {
+    status: 'healthy';
+} | {
+    status: 'crashed';
+    exitCode: number | null;
+} | {
+    status: 'timeout';
+};
 /**
  * Wait for the Python backend to respond to health checks.
+ * Returns early if the process crashes (no point waiting 90s).
+ * Updates the splash window with elapsed time.
  */
-export declare function waitForPythonHealth(port?: number, maxWaitMs?: number): Promise<boolean>;
+export declare function waitForPythonHealth(port?: number, maxWaitMs?: number, splashWindow?: BrowserWindow | null): Promise<HealthCheckResult>;

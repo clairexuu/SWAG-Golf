@@ -54,6 +54,16 @@ The packaged `.dmg` / `.exe` includes:
 - All Python source code (`api/`, `generate/`, `prompt/`, `rag/`, `style/`, `feedback/`)
 - Reference images, embedding cache, and style library
 
+
+### Python Setup
+On first launch, the app downloads a standalone Python 3.12.12 (~300MB) from astral-sh/python-build-standalone on GitHub. Then install all dependencies from @requirements.txt. It follows the following steps to initialize
+
+Initializing application data... — copies bundled resources to userData
+Checking Python environment... — downloads Python if not present (shows download %)
+Setting up pip... / Installing Python dependencies... — pip install
+Starting Python backend... — launches FastAPI via uvicorn on port 8000
+Starting API server... — Express API on port 3001
+Loading interface... — main window appears
 ---
 
 ## For Developers

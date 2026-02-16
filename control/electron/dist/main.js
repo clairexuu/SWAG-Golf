@@ -137,6 +137,62 @@ function createWindow() {
 // ---------------------------------------------------------------------------
 // Startup sequence
 // ---------------------------------------------------------------------------
+const MAX_PYTHON_RETRIES = 2;
+/**
+ * Kill lingering Python process (if any) before a retry.
+ */
+function killPythonProcess() {
+    if (pythonProcess && pythonProcess.pid) {
+        console.log('[Startup] Killing previous Python process before retry...');
+        if (process.platform === 'win32') {
+            try {
+                (0, child_process_1.execSync)(`taskkill /F /T /PID ${pythonProcess.pid}`, { stdio: 'ignore' });
+            }
+            catch { /* already dead */ }
+        }
+        else {
+            pythonProcess.kill('SIGTERM');
+        }
+        pythonProcess = null;
+    }
+}
+/**
+ * Attempt to start the Python backend and wait for it to become healthy.
+ * Returns the health check result.
+ */
+async function attemptPythonStart(pythonConfig) {
+    // Check for port conflict before spawning
+    const portBusy = await (0, python_manager_1.isPortInUse)(pythonConfig.port);
+    if (portBusy) {
+        console.warn(`[Startup] Port ${pythonConfig.port} is already in use.`);
+        return { status: 'crashed', exitCode: null };
+    }
+    updateSplash('Starting Python backend...');
+    pythonProcess = (0, python_manager_1.startPythonBackend)(pythonConfig);
+    return await (0, python_manager_1.waitForPythonHealth)(pythonConfig.port, 90_000, splashWindow);
+}
+/**
+ * Build a user-friendly error message based on the failure type.
+ */
+function buildErrorMessage(result, portBusy) {
+    const logPath = (0, python_manager_1.getPythonLogPath)();
+    const pythonOutput = (0, python_manager_1.getRecentPythonOutput)();
+    const logHint = logPath ? `\n\nLog file: ${logPath}` : '';
+    const outputSection = pythonOutput ? `\n\nRecent output:\n${pythonOutput}` : '\n\n(no output captured)';
+    if (portBusy) {
+        return `Port 8000 is already in use by another application.\n\n` +
+            `Please close the other application using port 8000 and try again, ` +
+            `or restart your computer.${logHint}`;
+    }
+    if (result.status === 'crashed') {
+        const code = result.exitCode != null ? ` (exit code ${result.exitCode})` : '';
+        return `The Python backend crashed during startup${code}.\n` +
+            `This usually means a missing dependency or import error.${logHint}${outputSection}`;
+    }
+    // timeout
+    return `The Python backend did not respond within 90 seconds.\n` +
+        `It may still be loading or is hung.${logHint}${outputSection}`;
+}
 async function startup() {
     console.log('Electron app ready');
     // Show splash
@@ -162,19 +218,52 @@ async function startup() {
             port: 8000,
         };
         await (0, python_manager_1.ensurePythonDeps)(pythonConfig, splashWindow);
-        // Step 4: Start Python backend
-        updateSplash('Starting Python backend...');
-        pythonProcess = (0, python_manager_1.startPythonBackend)(pythonConfig);
-        const pythonReady = await (0, python_manager_1.waitForPythonHealth)(pythonConfig.port, 90_000);
-        if (!pythonReady) {
-            const pythonOutput = (0, python_manager_1.getRecentPythonOutput)();
-            console.warn('[Startup] Python backend did not become healthy in time.');
-            console.warn('[Startup] Recent Python output:\n' + pythonOutput);
-            electron_1.dialog.showErrorBox('Python Backend Warning', 'The Python backend did not start in time. The app will run with limited functionality (mock mode).\n\n' +
-                'Recent Python output:\n' + (pythonOutput || '(no output captured)'));
-        }
-        else {
-            console.log('[Startup] Python backend is healthy.');
+        // Step 4: Start Python backend (with retry)
+        let result = { status: 'timeout' };
+        let attempts = 0;
+        while (attempts <= MAX_PYTHON_RETRIES) {
+            result = await attemptPythonStart(pythonConfig);
+            if (result.status === 'healthy') {
+                console.log('[Startup] Python backend is healthy.');
+                break;
+            }
+            // Build error context
+            const portBusy = await (0, python_manager_1.isPortInUse)(pythonConfig.port);
+            const errorMsg = buildErrorMessage(result, portBusy);
+            console.warn(`[Startup] Python backend failed (attempt ${attempts + 1}):`, result.status);
+            console.warn('[Startup] Recent Python output:\n' + (0, python_manager_1.getRecentPythonOutput)());
+            if (attempts < MAX_PYTHON_RETRIES) {
+                // Offer retry
+                updateSplash('Python backend failed to start');
+                const { response } = await electron_1.dialog.showMessageBox({
+                    type: 'warning',
+                    title: 'Python Backend Failed',
+                    message: errorMsg,
+                    buttons: ['Retry', 'Continue without Python'],
+                    defaultId: 0,
+                    cancelId: 1,
+                });
+                if (response === 0) {
+                    // Retry
+                    killPythonProcess();
+                    attempts++;
+                    continue;
+                }
+                // User chose to continue without Python
+                break;
+            }
+            else {
+                // Final attempt exhausted
+                updateSplash('Python backend failed to start');
+                electron_1.dialog.showMessageBox({
+                    type: 'error',
+                    title: 'Python Backend Error',
+                    message: `Failed after ${attempts + 1} attempts.\n\n${errorMsg}` +
+                        `\n\nThe app will run with limited functionality (mock mode).`,
+                    buttons: ['OK'],
+                });
+                break;
+            }
         }
         // Step 5: Start Express API (embedded)
         updateSplash('Starting API server...');

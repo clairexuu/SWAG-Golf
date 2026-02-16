@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { PencilIcon, ImagePlaceholderIcon, ClockIcon } from '../shared/Icons';
+import BackendStatus from '../shared/BackendStatus';
 
 export default function Header() {
 
@@ -40,6 +41,9 @@ export default function Header() {
 
       {/* Spacer */}
       <div className="flex-1" />
+
+      {/* Python backend connection status */}
+      <BackendStatus />
     </header>
   );
 }
