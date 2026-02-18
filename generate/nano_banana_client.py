@@ -13,6 +13,20 @@ from google.genai import types
 from PIL import Image
 
 
+REFINE_SYSTEM_PROMPT = """You are a sketch editing assistant. You receive an existing sketch and modification instructions.
+Your job is to take the given sketch and apply ONLY the requested modifications while preserving everything else.
+
+RULES:
+- GRAYSCALE ONLY — black, white, and gray tones only, no color
+- Keep the overall composition, character, pose, and artistic style of the original sketch
+- Apply ONLY the specific changes described in the instructions
+- The result should look like the same sketch with the modifications drawn on top
+- Maintain the same line weight, detail level, and technique
+- Do NOT add elements that weren't requested
+- Do NOT change aspects that weren't mentioned in the instructions
+"""
+
+
 SYSTEM_PROMPT = """You are a sketch assistant creating mascot/character patterns for apparel (polos, hats, bags).
 
 **COLOR: GRAYSCALE ONLY (MANDATORY)**
@@ -221,3 +235,169 @@ IMPORTANT OUTPUT REQUIREMENTS:
                     raise RuntimeError(f"API quota exceeded for image {index+1}. Check quota at https://ai.dev/rate-limit")
                 else:
                     raise RuntimeError(f"Failed to generate image {index+1}: {e}")
+
+    def refine(
+        self,
+        refine_prompt: str,
+        original_context: str,
+        refine_history: List[str],
+        source_images: List[str],
+        aspect_ratio: str = "9:16",
+        temperature: float = 0.6,
+    ) -> Tuple[List[Optional[bytes]], List[Optional[str]]]:
+        """
+        Refine existing sketch images by applying modification instructions.
+
+        Each source image is refined independently (1:1 mapping).
+
+        Args:
+            refine_prompt: User's current modification instructions
+            original_context: Original refined_intent from the initial generation
+            refine_history: Previous refine prompts in order (for chaining)
+            source_images: Paths to sketches to modify (1 output per source)
+            aspect_ratio: Gemini aspect ratio preset
+            temperature: Controls creativity (lower = more faithful edits)
+
+        Returns:
+            Tuple of (image_data_list, errors_list) with len == len(source_images)
+        """
+        # Build refine-specific enhanced prompt
+        history_section = ""
+        if refine_history:
+            items = "\n".join(f"  {i+1}. {h}" for i, h in enumerate(refine_history))
+            history_section = f"\nPREVIOUS REFINEMENTS ALREADY APPLIED:\n{items}\n"
+
+        enhanced_prompt = f"""EXISTING SKETCH: The attached image is the sketch to modify.
+
+ORIGINAL DESIGN CONTEXT: {original_context}
+{history_section}
+CURRENT MODIFICATION INSTRUCTIONS: {refine_prompt}
+
+Apply ONLY the current modification instructions to the existing sketch.
+{("The sketch may already reflect previous refinements — do not undo them." if refine_history else "")}
+Output a single modified sketch. GRAYSCALE ONLY — no color.
+"""
+
+        # Pre-load each source image as bytes
+        source_image_bytes_list = []
+        for p in source_images:
+            try:
+                with open(p, 'rb') as f:
+                    source_image_bytes_list.append(f.read())
+            except Exception as e:
+                print(f"Warning: Failed to load source image {p}: {e}")
+                source_image_bytes_list.append(None)
+
+        num_images = len(source_images)
+        print(f"Refining {num_images} image(s) in parallel...")
+
+        with ThreadPoolExecutor(max_workers=max(num_images, 1)) as executor:
+            futures = {}
+            for i, img_bytes in enumerate(source_image_bytes_list):
+                if img_bytes is None:
+                    continue
+                futures[executor.submit(
+                    self._generate_single_image_refine,
+                    enhanced_prompt, img_bytes, aspect_ratio, temperature, i
+                )] = i
+
+            results = [None] * num_images
+            errors = [None] * num_images
+
+            # Mark images that failed to load
+            for i, img_bytes in enumerate(source_image_bytes_list):
+                if img_bytes is None:
+                    errors[i] = f"Failed to load source image: {source_images[i]}"
+
+            for future in as_completed(futures):
+                idx = futures[future]
+                try:
+                    results[idx] = future.result()
+                except Exception as e:
+                    errors[idx] = str(e)
+                    print(f"Refine image {idx+1} failed: {e}")
+
+        return results, errors
+
+    def _generate_single_image_refine(
+        self,
+        enhanced_prompt: str,
+        source_image_bytes: bytes,
+        aspect_ratio: str,
+        temperature: float,
+        index: int
+    ) -> bytes:
+        """
+        Refine a single image via the Gemini API.
+
+        Args:
+            enhanced_prompt: The refine prompt string
+            source_image_bytes: The source sketch image data as bytes
+            aspect_ratio: Gemini aspect ratio preset
+            temperature: Generation temperature
+            index: Image index (0-based, used for logging)
+
+        Returns:
+            Refined image data as bytes
+        """
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                source_img = Image.open(BytesIO(source_image_bytes))
+                contents = [enhanced_prompt, source_img]
+
+                response = self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=contents,
+                    config=types.GenerateContentConfig(
+                        systemInstruction=REFINE_SYSTEM_PROMPT,
+                        responseModalities=["IMAGE", "TEXT"],
+                        temperature=temperature,
+                        imageConfig=types.ImageConfig(
+                            aspectRatio=aspect_ratio
+                        )
+                    )
+                )
+
+                if response.candidates and len(response.candidates) > 0:
+                    candidate = response.candidates[0]
+                    if hasattr(candidate, 'content') and candidate.content.parts:
+                        for part in candidate.content.parts:
+                            if os.getenv("DEBUG_GEMINI"):
+                                print(f"  Debug (refine): Part type={type(part).__name__}, attrs={[a for a in dir(part) if not a.startswith('_')]}")
+                            if hasattr(part, 'inline_data') and part.inline_data:
+                                img_data = part.inline_data.data
+
+                                if isinstance(img_data, str):
+                                    img_bytes = base64.b64decode(img_data)
+                                else:
+                                    img_bytes = img_data
+
+                                if img_bytes and isinstance(img_bytes, bytes):
+                                    if img_bytes.startswith(b'\x89PNG') or img_bytes.startswith(b'\xff\xd8\xff'):
+                                        return img_bytes
+                                    else:
+                                        print(f"Warning: Invalid image format in refine response {index+1}")
+                        raise RuntimeError(f"Gemini returned no image data for refine {index+1}")
+                    else:
+                        raise RuntimeError(f"Gemini returned no content for refine {index+1}")
+                else:
+                    raise RuntimeError(f"Gemini returned no candidates for refine {index+1}")
+
+            except RuntimeError:
+                raise
+
+            except Exception as e:
+                error_msg = str(e)
+                is_retryable = '503' in error_msg or '429' in error_msg or 'unavailable' in error_msg.lower()
+
+                if is_retryable and attempt < max_retries - 1:
+                    wait = 2 ** attempt
+                    print(f"Warning: Refine {index+1} got transient error (attempt {attempt+1}/{max_retries}), retrying in {wait}s...")
+                    time.sleep(wait)
+                    continue
+
+                if '429' in error_msg or 'quota' in error_msg.lower():
+                    raise RuntimeError(f"API quota exceeded for refine {index+1}. Check quota at https://ai.dev/rate-limit")
+                else:
+                    raise RuntimeError(f"Failed to refine image {index+1}: {e}")

@@ -12,6 +12,7 @@ interface GenerationsResponse {
     timestamp: string;
     dirName: string;
     userPrompt: string;
+    mode?: 'generate' | 'refine';
     style: { id: string; name: string };
     imageCount: number;
     images: string[];
@@ -46,6 +47,23 @@ router.get('/generations', async (req, res) => {
         message: error instanceof Error ? error.message : 'Failed to fetch generations',
       },
     });
+  }
+});
+
+router.post('/generations/:dirName/confirm', async (req, res) => {
+  try {
+    const pythonHealthy = await checkPythonHealth();
+    if (!pythonHealthy) {
+      return res.status(503).json({ success: false, error: { code: 'BACKEND_UNAVAILABLE', message: 'Python backend is not available' } });
+    }
+
+    const response = await fetchFromPython<{ success: boolean }>(`/generations/${req.params.dirName}/confirm`, {
+      method: 'POST',
+    });
+    return res.json(response);
+  } catch (error) {
+    console.error('Error confirming generation:', error);
+    res.status(500).json({ success: false, error: { code: 'CONFIRM_ERROR', message: error instanceof Error ? error.message : 'Failed to confirm generation' } });
   }
 });
 

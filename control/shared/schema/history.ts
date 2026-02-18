@@ -4,6 +4,7 @@ export interface GenerationSummary {
   timestamp: string;
   dirName: string;
   userPrompt: string;
+  mode?: 'generate' | 'refine';
   style: { id: string; name: string };
   imageCount: number;
   images: string[];

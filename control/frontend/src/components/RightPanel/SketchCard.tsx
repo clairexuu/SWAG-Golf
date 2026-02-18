@@ -1,5 +1,5 @@
 import type { Sketch } from '../../types';
-import { DownloadIcon, ExpandIcon, ErrorCircleIcon } from '../shared/Icons';
+import { DownloadIcon, ExpandIcon, ErrorCircleIcon, CheckIcon } from '../shared/Icons';
 
 const API_BASE_URL = 'http://localhost:3001/api';
 const getImageUrl = (imagePath: string) => `${API_BASE_URL}${imagePath}`;
@@ -8,9 +8,12 @@ interface SketchCardProps {
   sketch: Sketch;
   onExpand: () => void;
   onDownload: () => void;
+  selectionMode?: boolean;
+  isSelected?: boolean;
+  onToggleSelect?: () => void;
 }
 
-export default function SketchCard({ sketch, onExpand, onDownload }: SketchCardProps) {
+export default function SketchCard({ sketch, onExpand, onDownload, selectionMode, isSelected, onToggleSelect }: SketchCardProps) {
   // Error state — show error message instead of image
   if (sketch.error) {
     return (
@@ -24,8 +27,37 @@ export default function SketchCard({ sketch, onExpand, onDownload }: SketchCardP
     );
   }
 
+  const handleClick = () => {
+    if (selectionMode) {
+      onToggleSelect?.();
+    } else {
+      onExpand();
+    }
+  };
+
   return (
-    <div className="sketch-card group cursor-pointer h-full aspect-[9/16]" onClick={onExpand}>
+    <div
+      className={`sketch-card group cursor-pointer h-full aspect-[9/16] ${
+        selectionMode && isSelected ? 'border-2 !border-amber-400' : ''
+      }`}
+      onClick={handleClick}
+    >
+      {/* Selection checkbox overlay */}
+      {selectionMode && (
+        <div
+          className="absolute top-2 left-2 z-10"
+          onClick={(e) => { e.stopPropagation(); onToggleSelect?.(); }}
+        >
+          <div className={`w-6 h-6 rounded border-2 flex items-center justify-center transition-all ${
+            isSelected
+              ? 'bg-amber-400 border-amber-400'
+              : 'bg-black/40 border-white/60 hover:border-white'
+          }`}>
+            {isSelected && <CheckIcon className="w-4 h-4 text-black" />}
+          </div>
+        </div>
+      )}
+
       {/* Image container */}
       <div className="h-full">
         <img
@@ -36,7 +68,7 @@ export default function SketchCard({ sketch, onExpand, onDownload }: SketchCardP
       </div>
 
       {/* Hover overlay */}
-      <div className="sketch-card-overlay group-hover:opacity-100">
+      <div className={`sketch-card-overlay ${selectionMode ? '' : 'group-hover:opacity-100'}`}>
         {/* Resolution info */}
         {sketch.resolution && (
           <div className="absolute top-3 right-3">

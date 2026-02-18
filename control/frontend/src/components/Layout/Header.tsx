@@ -1,8 +1,14 @@
+import { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import { PencilIcon, ImagePlaceholderIcon, ClockIcon } from '../shared/Icons';
 import BackendStatus from '../shared/BackendStatus';
 
 export default function Header() {
+  const [version, setVersion] = useState<string | null>(null);
+
+  useEffect(() => {
+    (window as any).electronAPI?.getAppVersion?.().then((v: string) => setVersion(v));
+  }, []);
 
   const navLinkClass = ({ isActive }: { isActive: boolean }) =>
     `flex items-center gap-1.5 px-3 py-1.5 rounded-btn text-xs font-bold uppercase tracking-wider transition-all ${
@@ -41,6 +47,9 @@ export default function Header() {
 
       {/* Spacer */}
       <div className="flex-1" />
+
+      {/* App version */}
+      {version && <span className="text-xs text-swag-text-tertiary">v{version}</span>}
 
       {/* Python backend connection status */}
       <BackendStatus />

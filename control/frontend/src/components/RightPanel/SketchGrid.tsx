@@ -11,12 +11,16 @@ const getImageUrl = (imagePath: string) => `${API_BASE_URL}${imagePath}`;
 interface SketchGridProps {
   sketches: Sketch[];
   isGenerating: boolean;
+  refiningIndices?: Set<number>;
   error: string | null;
   onImageClick: (index: number) => void;
   onCancel: () => void;
+  selectionMode?: boolean;
+  selectedIndices?: Set<number>;
+  onToggleSelect?: (index: number) => void;
 }
 
-export default function SketchGrid({ sketches, isGenerating, error, onImageClick, onCancel }: SketchGridProps) {
+export default function SketchGrid({ sketches, isGenerating, refiningIndices, error, onImageClick, onCancel, selectionMode, selectedIndices, onToggleSelect }: SketchGridProps) {
   const handleDownload = async (sketch: Sketch) => {
     if (!sketch.imagePath) return;
     const imageUrl = getImageUrl(sketch.imagePath);
@@ -71,11 +75,11 @@ export default function SketchGrid({ sketches, isGenerating, error, onImageClick
     );
   }
 
-  // Loading state: skeleton grid
-  if (isGenerating) {
+  // Loading state: full skeleton grid only for fresh generate (not refine)
+  if (isGenerating && (!refiningIndices || refiningIndices.size === 0)) {
     return (
       <div className="flex-1 flex flex-col overflow-hidden p-4">
-        <div className="flex-1 grid grid-cols-4 gap-3 overflow-hidden justify-items-center">
+        <div className="flex-1 grid grid-cols-4 gap-4 overflow-hidden justify-items-center">
           <SkeletonSketchCard />
           <SkeletonSketchCard />
           <SkeletonSketchCard />
@@ -121,6 +125,11 @@ export default function SketchGrid({ sketches, isGenerating, error, onImageClick
             Generated Sketches
           </h2>
           <span className="tag-green">{sketches.length}</span>
+          {selectionMode && selectedIndices && selectedIndices.size > 0 && (
+            <span className="text-xs font-semibold uppercase tracking-wider text-amber-400 bg-amber-400/15 px-2 py-0.5 rounded">
+              {selectedIndices.size} selected
+            </span>
+          )}
         </div>
         <button
           onClick={handleDownloadAll}
@@ -132,16 +141,34 @@ export default function SketchGrid({ sketches, isGenerating, error, onImageClick
       </div>
 
       {/* Grid */}
-      <div className="flex-1 grid grid-cols-4 gap-3 overflow-hidden justify-items-center">
-        {sketches.map((sketch, index) => (
-          <SketchCard
-            key={sketch.id}
-            sketch={sketch}
-            onExpand={() => onImageClick(index)}
-            onDownload={() => handleDownload(sketch)}
-          />
-        ))}
+      <div className="flex-1 grid grid-cols-4 gap-4 overflow-hidden justify-items-center">
+        {sketches.map((sketch, index) =>
+          refiningIndices?.has(index) ? (
+            <SkeletonSketchCard key={sketch.id} />
+          ) : (
+            <SketchCard
+              key={sketch.id}
+              sketch={sketch}
+              onExpand={() => onImageClick(index)}
+              onDownload={() => handleDownload(sketch)}
+              selectionMode={selectionMode}
+              isSelected={selectedIndices?.has(index)}
+              onToggleSelect={() => onToggleSelect?.(index)}
+            />
+          )
+        )}
       </div>
+      {refiningIndices && refiningIndices.size > 0 && (
+        <div className="text-center py-3">
+          <p className="text-swag-white text-sm font-medium animate-pulse">Refining {refiningIndices.size} sketch{refiningIndices.size > 1 ? 'es' : ''}...</p>
+          <button
+            onClick={onCancel}
+            className="px-4 py-1.5 text-xs uppercase tracking-wider mt-2 rounded bg-red-600 hover:bg-red-700 text-white font-medium transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
     </div>
   );
 }

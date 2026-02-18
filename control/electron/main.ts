@@ -4,6 +4,7 @@ import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import * as path from 'path';
 import { ChildProcess, execSync } from 'child_process';
 import { getResourcePath, getUserDataPath, getFrontendPath, initializeUserData } from './paths';
+import { initAutoUpdater } from './auto-updater';
 import {
   findOrDownloadPython, ensurePythonDeps, startPythonBackend,
   waitForPythonHealth, getRecentPythonOutput, getPythonLogPath,
@@ -148,7 +149,20 @@ async function attemptPythonStart(pythonConfig: PythonConfig): Promise<HealthChe
   // Check for port conflict before spawning
   const portBusy = await isPortInUse(pythonConfig.port);
   if (portBusy) {
-    console.warn(`[Startup] Port ${pythonConfig.port} is already in use.`);
+    // Port is taken — check if it's already a healthy Python backend
+    // (e.g. started by start-dev.sh or a previous run)
+    try {
+      const res = await fetch(`http://127.0.0.1:${pythonConfig.port}/health`, {
+        signal: AbortSignal.timeout(3000),
+      });
+      if (res.ok) {
+        console.log(`[Startup] Existing healthy Python backend found on port ${pythonConfig.port}, reusing it.`);
+        return { status: 'healthy' };
+      }
+    } catch {
+      // Not a healthy backend
+    }
+    console.warn(`[Startup] Port ${pythonConfig.port} is already in use by a non-Python process.`);
     return { status: 'crashed', exitCode: null };
   }
 
@@ -267,20 +281,31 @@ async function startup(): Promise<void> {
       }
     }
 
-    // Step 5: Start Express API (embedded)
-    updateSplash('Starting API server...');
-    const { startApiServer } = require('./api-server');
-    const frontendDir = isDev ? undefined : path.join(process.resourcesPath, 'frontend');
-    apiServer = await startApiServer({
-      port: 3001,
-      generatedImagesPath: getUserDataPath('generated_outputs'),
-      referenceImagesPath: getUserDataPath('rag/reference_images'),
-      frontendPath: frontendDir,
-    });
+    // Step 5: Start Express API (embedded) — skip if already running (e.g. start-dev.sh)
+    const apiPort = 3001;
+    const apiBusy = await isPortInUse(apiPort);
+    if (apiBusy) {
+      console.log(`[Startup] Express API already running on port ${apiPort}, reusing it.`);
+    } else {
+      updateSplash('Starting API server...');
+      const { startApiServer } = require('./api-server');
+      const frontendDir = isDev ? undefined : path.join(process.resourcesPath, 'frontend');
+      apiServer = await startApiServer({
+        port: apiPort,
+        generatedImagesPath: getUserDataPath('generated_outputs'),
+        referenceImagesPath: getUserDataPath('rag/reference_images'),
+        frontendPath: frontendDir,
+      });
+    }
 
     // Step 6: Create main window
     updateSplash('Loading interface...');
     createWindow();
+
+    // Step 7: Initialize auto-updater (non-blocking, production only)
+    if (!isDev && mainWindow) {
+      initAutoUpdater(mainWindow);
+    }
 
   } catch (err) {
     console.error('[Startup] Fatal error:', err);
@@ -292,6 +317,8 @@ async function startup(): Promise<void> {
 // ---------------------------------------------------------------------------
 // IPC handlers
 // ---------------------------------------------------------------------------
+
+ipcMain.handle('get-app-version', () => app.getVersion());
 
 ipcMain.handle('get-python-status', async () => {
   try {

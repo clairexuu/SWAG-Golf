@@ -6,14 +6,18 @@
   "scripts": {
     "dev": "tsc && NODE_ENV=development electron .",
     "build:api": "node build-api.js",
+    "build:code-hash": "node generate-code-hash.js",
     "encrypt-env": "node encrypt-env.js",
     "build": "npm run build:mac && npm run build:win",
-    "build:mac": "npm run encrypt-env && npm run build:api && tsc && electron-builder --mac -c.directories.output=release/mac",
-    "build:win": "npm run encrypt-env && npm run build:api && tsc && electron-builder --win --x64 -c.directories.output=release/win"
+    "build:mac": "npm run encrypt-env && npm run build:api && npm run build:code-hash && tsc && electron-builder --mac -c.directories.output=release/mac",
+    "build:win": "npm run encrypt-env && npm run build:api && npm run build:code-hash && tsc && electron-builder --win --x64 -c.directories.output=release/win",
+    "release:mac": "npm run encrypt-env && npm run build:api && npm run build:code-hash && tsc && electron-builder --mac --publish always -c.directories.output=release/mac",
+    "release:win": "npm run encrypt-env && npm run build:api && npm run build:code-hash && tsc && electron-builder --win --x64 --publish always -c.directories.output=release/win"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "electron-store": "^8.1.0",
+    "electron-updater": "^6.7.3",
     "express": "^4.18.2",
     "tar": "^6.2.1"
   },
@@ -33,6 +37,13 @@
     "appId": "com.swag.concept-sketch-agent",
     "productName": "SWAG Concept Sketch Agent",
     "afterSign": "notarize.js",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "clairexuu",
+        "repo": "SWAG-Golf"
+      }
+    ],
     "files": [
       "dist/**/*"
     ],
@@ -48,6 +59,10 @@
       {
         "from": "../../requirements.txt",
         "to": "data/requirements.txt"
+      },
+      {
+        "from": "../../.code-hash",
+        "to": "data/.code-hash"
       },
       {
         "from": "../../rag/reference_images",

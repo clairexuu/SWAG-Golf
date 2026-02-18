@@ -27,7 +27,7 @@ class ConversationTurn:
             "user_input": self.user_input,
             "style_id": self.style_id,
         }
-        if self.role == "generate":
+        if self.role in ("generate", "refine"):
             d["refined_intent"] = self.refined_intent
             d["negative_constraints"] = self.negative_constraints
             d["image_paths"] = self.image_paths
@@ -53,10 +53,12 @@ class ConversationContext:
     def add_turn(self, turn: ConversationTurn) -> None:
         self.turns.append(turn)
 
-    def to_gpt_messages(self) -> List[Dict[str, str]]:
+    def to_gpt_messages(self, exclude_roles: Optional[List[str]] = None) -> List[Dict[str, str]]:
         """Convert history into OpenAI chat message format."""
         messages = []
         for turn in self.turns:
+            if exclude_roles and turn.role in exclude_roles:
+                continue
             if turn.role == "generate":
                 messages.append({
                     "role": "user",
@@ -70,6 +72,15 @@ class ConversationContext:
                         f"Negative constraints: {', '.join(turn.negative_constraints or [])}\n"
                         f"Generated images: {', '.join(f'Image {i+1}' for i in range(len(turn.image_paths or [])))}"
                     )
+                })
+            elif turn.role == "refine":
+                messages.append({
+                    "role": "user",
+                    "content": f"[Refinement] {turn.user_input}"
+                })
+                messages.append({
+                    "role": "assistant",
+                    "content": "[Refined sketches generated]"
                 })
             elif turn.role == "feedback":
                 messages.append({

@@ -87,9 +87,16 @@ export default function GenerationCard({ generation, onImageClick, index }: Gene
       <div className="generation-card-header">
         <div className="flex items-start justify-between gap-3 mb-2">
           <div className="flex-1 min-w-0">
-            <p className="text-xs text-swag-green font-mono tracking-wider mb-1.5">
-              {formatTimestamp(generation.timestamp)}
-            </p>
+            <div className="flex items-center gap-2 mb-1.5">
+              <p className="text-xs text-swag-green font-mono tracking-wider">
+                {formatTimestamp(generation.timestamp)}
+              </p>
+              {generation.mode === 'refine' && (
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-400 bg-amber-400/10 px-1.5 py-0.5 rounded">
+                  Refined
+                </span>
+              )}
+            </div>
             <p className="text-sm text-swag-text-secondary leading-relaxed line-clamp-2">
               {generation.userPrompt}
             </p>

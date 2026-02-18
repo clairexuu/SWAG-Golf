@@ -239,12 +239,13 @@ class PipelineService:
         style = self.style_registry.get_style(style_id)
 
         # Step 2: Get conversation history if session exists
+        # Exclude refine turns — they are irrelevant to new concept generation
         conversation_history = None
         context = None
         if session_id:
             context = self.session_store.get_or_create(session_id, style_id)
             if context.turn_count > 0:
-                conversation_history = context.to_gpt_messages()
+                conversation_history = context.to_gpt_messages(exclude_roles=["refine"])
 
         # Step 3: Compile prompt with GPT (with conversation context)
         prompt_spec = self.compiler.compile(
@@ -285,6 +286,86 @@ class PipelineService:
             self.conversation_logger.log_turn(session_id, style_id, turn.to_dict())
 
         return result, prompt_spec, retrieval_result, style
+
+    def refine(
+        self,
+        refine_prompt: str,
+        selected_image_paths: List[str],
+        style_id: str,
+        session_id: Optional[str] = None,
+    ) -> Tuple[GenerationResult, Style]:
+        """
+        Refine existing sketch images by applying modification instructions.
+
+        Skips GPT prompt compilation and RAG retrieval — uses the original
+        generation's context and sends selected images directly to Gemini
+        with an editing-focused prompt.
+
+        Args:
+            refine_prompt: User's modification instructions
+            selected_image_paths: Absolute filesystem paths to sketches to modify
+            style_id: ID of the style
+            session_id: Optional session ID for conversation context
+
+        Returns:
+            Tuple of (GenerationResult, Style)
+        """
+        self._initialize()
+
+        # Step 1: Get style
+        style = self.style_registry.get_style(style_id)
+
+        # Step 2: Get original context from the initial generation turn
+        original_context = ""
+        refine_history = []
+        if session_id:
+            context = self.session_store.get_or_create(session_id, style_id)
+            # Find the last role="generate" turn's refined_intent
+            for turn in reversed(context.turns):
+                if turn.role == "generate" and turn.refined_intent:
+                    original_context = turn.refined_intent
+                    break
+            # Collect refine prompts only from the current generation cycle
+            # (i.e., after the last "generate" turn)
+            refine_history = []
+            for turn in reversed(context.turns):
+                if turn.role == "refine":
+                    refine_history.insert(0, turn.user_input)
+                elif turn.role == "generate":
+                    break
+
+        # Step 3: Refine images (1:1 mapping — each source → 1 output)
+        config = GenerationConfig(
+            num_images=len(selected_image_paths),
+            resolution=(1024, 1024),
+            output_dir="generated_outputs"
+        )
+
+        result = self.generator.refine(
+            refine_prompt=refine_prompt,
+            original_context=original_context,
+            refine_history=refine_history,
+            source_image_paths=selected_image_paths,
+            style=style,
+            config=config,
+        )
+
+        # Step 4: Record refine turn in session
+        if session_id:
+            context = self.session_store.get_or_create(session_id, style_id)
+            turn = ConversationTurn(
+                turn_number=context.turn_count + 1,
+                role="refine",
+                timestamp=result.timestamp,
+                user_input=refine_prompt,
+                style_id=style_id,
+                refined_intent=original_context,
+                image_paths=result.images,
+            )
+            context.add_turn(turn)
+            self.conversation_logger.log_turn(session_id, style_id, turn.to_dict())
+
+        return result, style
 
     def add_feedback(
         self,

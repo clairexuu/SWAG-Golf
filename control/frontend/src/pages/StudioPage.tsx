@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import Sidebar from '../components/Layout/Sidebar';
 import StyleSelector from '../components/LeftPanel/StyleSelector';
 import PromptComposer from '../components/CenterPanel/PromptComposer';
+import type { ComposerMode } from '../components/CenterPanel/PromptComposer';
 import SketchGrid from '../components/RightPanel/SketchGrid';
 import Lightbox from '../components/RightPanel/Lightbox';
 import { useGenerationContext } from '../context/GenerationContext';
@@ -17,7 +18,7 @@ const getImageUrl = (imagePath: string) => `${API_BASE_URL}${imagePath}`;
 
 export default function StudioPage() {
   const { selectedStyleId, selectStyle } = useStyleContext();
-  const { generate, cancel, isGenerating, error, sketches, clearSketches } = useGenerationContext();
+  const { generate, refine, cancel, isGenerating, refiningIndices, error, sketches, clearSketches } = useGenerationContext();
   const { collapsed: sidebarCollapsed, toggle: toggleSidebar } = useSidebar();
   const toast = useToast();
 
@@ -25,6 +26,9 @@ export default function StudioPage() {
   const [hasFeedback, setHasFeedback] = useState(false);
   const [, setLastInput] = useState('');
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [composerMode, setComposerMode] = useState<ComposerMode>('concept');
+  const [selectedSketchIndices, setSelectedSketchIndices] = useState<Set<number>>(new Set());
+
   // Refs for beforeunload / unmount flush
   const sessionIdRef = useRef(sessionId);
   const selectedStyleIdRef = useRef(selectedStyleId);
@@ -33,6 +37,13 @@ export default function StudioPage() {
   useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
   useEffect(() => { selectedStyleIdRef.current = selectedStyleId; }, [selectedStyleId]);
   useEffect(() => { hasFeedbackRef.current = hasFeedback; }, [hasFeedback]);
+
+  // Clear selection when leaving refine mode
+  useEffect(() => {
+    if (composerMode !== 'refine') {
+      setSelectedSketchIndices(new Set());
+    }
+  }, [composerMode]);
 
   // Flush feedback on page unload
   useEffect(() => {
@@ -111,6 +122,33 @@ export default function StudioPage() {
     }
   }, [sessionId, selectedStyleId, toast]);
 
+  const handleSubmitRefine = useCallback(async (refinePrompt: string) => {
+    if (!selectedStyleId || selectedSketchIndices.size === 0) return;
+
+    const sortedIndices = Array.from(selectedSketchIndices).sort((a, b) => a - b);
+    const selectedImagePaths = sortedIndices
+      .map(i => sketches[i]?.imagePath)
+      .filter((p): p is string => p != null);
+
+    if (selectedImagePaths.length === 0) {
+      toast.error('No valid images selected');
+      return;
+    }
+
+    await refine(
+      {
+        refinePrompt,
+        selectedImagePaths,
+        styleId: selectedStyleId,
+        sessionId,
+      },
+      sortedIndices
+    );
+
+    // Clear selection after refine completes
+    setSelectedSketchIndices(new Set());
+  }, [selectedStyleId, selectedSketchIndices, sketches, sessionId, refine, toast]);
+
   const handleStyleSelect = useCallback(async (newStyleId: string) => {
     if (hasFeedback && selectedStyleId) {
       try {
@@ -125,6 +163,8 @@ export default function StudioPage() {
     setHasFeedback(false);
     setLastInput('');
     clearSketches();
+    setComposerMode('concept');
+    setSelectedSketchIndices(new Set());
   }, [hasFeedback, selectedStyleId, sessionId, clearSketches, selectStyle]);
 
   const handleDownloadSketch = async (sketch: Sketch) => {
@@ -147,6 +187,18 @@ export default function StudioPage() {
       toast.error('Download failed');
     }
   };
+
+  const handleToggleSelect = useCallback((index: number) => {
+    setSelectedSketchIndices(prev => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
+  }, []);
 
   return (
     <>
@@ -191,16 +243,24 @@ export default function StudioPage() {
         <SketchGrid
           sketches={sketches}
           isGenerating={isGenerating}
+          refiningIndices={refiningIndices}
           error={error}
           onImageClick={(index) => setLightboxIndex(index)}
           onCancel={cancel}
+          selectionMode={composerMode === 'refine'}
+          selectedIndices={selectedSketchIndices}
+          onToggleSelect={handleToggleSelect}
         />
         <PromptComposer
           onGenerate={handleGenerate}
           onSubmitFeedback={handleSubmitFeedback}
+          onSubmitRefine={handleSubmitRefine}
           isGenerating={isGenerating}
           disabled={!selectedStyleId}
           hasSketches={sketches.length > 0}
+          mode={composerMode}
+          onModeChange={setComposerMode}
+          selectedSketchCount={selectedSketchIndices.size}
         />
       </main>
 

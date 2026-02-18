@@ -68,3 +68,10 @@ export interface SummarizeResponse {
     message: string;
   };
 }
+
+export interface RefineRequest {
+  refinePrompt: string;
+  selectedImagePaths: string[];
+  styleId: string;
+  sessionId?: string;
+}

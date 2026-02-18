@@ -4,7 +4,7 @@ import json
 import os
 import shutil
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -86,7 +86,7 @@ def generate_sketches(request: GenerateRequest):
         sketches = []
         for i, image_path in enumerate(result.images):
             sketch = {
-                "id": f"sketch_{i}",
+                "id": f"{result.timestamp}_sketch_{i}",
                 "resolution": list(result.config.resolution),
                 "metadata": {
                     "promptSpec": {
@@ -133,6 +133,8 @@ def generate_sketches(request: GenerateRequest):
 
         return response
 
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -140,6 +142,116 @@ def generate_sketches(request: GenerateRequest):
             "success": False,
             "error": {
                 "code": "GENERATION_ERROR",
+                "message": str(e)
+            }
+        }
+
+
+class RefineRequest(BaseModel):
+    """Request body for refine endpoint."""
+    refinePrompt: str
+    selectedImagePaths: List[str]  # relative URLs: "/generated/timestamp/sketch_0.png"
+    styleId: str
+    sessionId: Optional[str] = None
+
+
+def _resolve_image_path(relative_url: str) -> str:
+    """Convert /generated/timestamp/sketch.png to absolute path under generated_outputs/."""
+    rel_part = relative_url.replace("/generated/", "", 1)
+    abs_path = Path("generated_outputs").resolve() / rel_part
+    if not abs_path.exists():
+        raise ValueError(f"Image not found: {abs_path}")
+    return str(abs_path)
+
+
+@router.post("/refine")
+def refine_sketches(request: RefineRequest):
+    """
+    Refine existing sketch images by applying modification instructions.
+
+    Each selected image is refined independently (1:1 mapping).
+    Response matches the same GenerateResponse interface as /generate.
+    """
+    try:
+        # Validate inputs
+        if not request.refinePrompt or not request.refinePrompt.strip():
+            raise HTTPException(status_code=400, detail="Refine prompt cannot be empty")
+
+        if not request.selectedImagePaths:
+            raise HTTPException(status_code=400, detail="At least one image must be selected")
+
+        # Resolve relative URLs to absolute filesystem paths
+        resolved_paths = []
+        for rel_url in request.selectedImagePaths:
+            resolved_paths.append(_resolve_image_path(rel_url))
+
+        service = PipelineService()
+
+        # Run refine pipeline
+        result, style = service.refine(
+            refine_prompt=request.refinePrompt,
+            selected_image_paths=resolved_paths,
+            style_id=request.styleId,
+            session_id=request.sessionId,
+        )
+
+        # Build response matching TypeScript GenerateResponse interface
+        sketches = []
+        for i, image_path in enumerate(result.images):
+            sketch = {
+                "id": f"{result.timestamp}_sketch_{i}",
+                "resolution": list(result.config.resolution),
+                "metadata": {
+                    "promptSpec": {
+                        "intent": result.prompt_spec.intent,
+                        "refinedIntent": result.prompt_spec.refined_intent,
+                        "negativeConstraints": result.prompt_spec.negative_constraints or []
+                    },
+                    "referenceImages": resolved_paths,
+                    "retrievalScores": []
+                }
+            }
+
+            if image_path is not None:
+                rel_path = Path(image_path).relative_to(Path("generated_outputs").resolve())
+                sketch["imagePath"] = f"/generated/{rel_path}"
+            else:
+                sketch["imagePath"] = None
+                sketch["error"] = result.image_errors[i] if i < len(result.image_errors) else "Unknown error"
+
+            sketches.append(sketch)
+
+        response = {
+            "success": True,
+            "data": {
+                "timestamp": result.timestamp,
+                "sketches": sketches,
+                "generationMetadata": {
+                    "styleId": style.id,
+                    "configUsed": {
+                        "numImages": result.config.num_images,
+                        "resolution": list(result.config.resolution),
+                        "outputDir": result.config.output_dir,
+                        "modelName": result.config.model_name,
+                        "seed": result.config.seed
+                    }
+                }
+            }
+        }
+
+        _prune_generations(request.styleId)
+
+        return response
+
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        return {
+            "success": False,
+            "error": {
+                "code": "REFINE_ERROR",
                 "message": str(e)
             }
         }

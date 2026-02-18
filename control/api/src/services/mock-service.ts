@@ -28,7 +28,7 @@ export class MockGenerationService {
 
     // Generate mock sketches
     const sketches: Sketch[] = Array.from({ length: numImages }, (_, i) => ({
-      id: `sketch_${i}`,
+      id: `${timestamp}_sketch_${i}`,
       imagePath: `/mock-outputs/placeholder-${i}.png`,
       resolution: [1024, 1024] as [number, number],
       metadata: {

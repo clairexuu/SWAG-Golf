@@ -1,5 +1,5 @@
 # generate/generator.py
-from typing import Optional
+from typing import List, Optional
 from .adapter import ImageModelAdapter
 from .nano_banana import NanaBananaAdapter
 from .types import GenerationConfig, GenerationResult, GenerationPayload
@@ -90,6 +90,7 @@ class ImageGenerator:
             # Prepare metadata dictionary
             metadata_dict = {
                 "timestamp": timestamp,
+                "archived": False,
                 "user_prompt": prompt_spec.intent,
                 "gpt_compiled_prompt": prompt_spec.refined_intent,
                 "style": {
@@ -112,6 +113,92 @@ class ImageGenerator:
             }
 
             # Save metadata
+            metadata_path = save_metadata(metadata_dict, output_dir)
+            result.metadata_path = metadata_path
+
+        return result
+
+    def refine(
+        self,
+        refine_prompt: str,
+        original_context: str,
+        refine_history: List[str],
+        source_image_paths: List[str],
+        style,
+        config: Optional[GenerationConfig] = None,
+    ) -> GenerationResult:
+        """
+        Refine existing sketch images by applying modification instructions.
+
+        Args:
+            refine_prompt: User's modification instructions
+            original_context: Original GPT-compiled refined_intent
+            refine_history: Previous refine prompts in order (for chaining)
+            source_image_paths: Absolute paths to sketches to modify
+            style: Style object
+            config: Optional generation config
+
+        Returns:
+            GenerationResult containing refined image paths and metadata
+        """
+        if config is None:
+            config = GenerationConfig(num_images=len(source_image_paths))
+
+        # Refine images via adapter
+        image_paths, image_errors = self.adapter.refine(
+            refine_prompt=refine_prompt,
+            original_context=original_context,
+            refine_history=refine_history,
+            source_image_paths=source_image_paths,
+            config=config,
+        )
+
+        timestamp = get_timestamp()
+
+        # Build a PromptSpec for metadata recording
+        prompt_spec = PromptSpec(
+            intent=refine_prompt,
+            refined_intent=original_context,
+        )
+
+        result = GenerationResult(
+            images=image_paths,
+            image_errors=image_errors,
+            metadata_path="",
+            timestamp=timestamp,
+            prompt_spec=prompt_spec,
+            reference_images=source_image_paths,
+            config=config,
+        )
+
+        # Save metadata
+        successful_paths = [p for p in image_paths if p is not None]
+        if successful_paths:
+            import os
+            output_dir = os.path.dirname(successful_paths[0])
+
+            metadata_dict = {
+                "timestamp": timestamp,
+                "archived": False,
+                "mode": "refine",
+                "refine_prompt": refine_prompt,
+                "original_context": original_context,
+                "refine_history": refine_history,
+                "source_images": source_image_paths,
+                "style": {
+                    "id": style.id,
+                    "name": style.name,
+                },
+                "config": {
+                    "num_images": config.num_images,
+                    "resolution": list(config.resolution),
+                    "model_name": config.model_name,
+                    "aspect_ratio": config.aspect_ratio,
+                },
+                "images": [os.path.basename(p) for p in successful_paths],
+                "image_errors": [e for e in image_errors if e is not None],
+            }
+
             metadata_path = save_metadata(metadata_dict, output_dir)
             result.metadata_path = metadata_path
 

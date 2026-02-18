@@ -1,7 +1,7 @@
 // API client for communicating with Express backend
 
 import axios from 'axios';
-import type { GenerateRequest, GenerateResponse, Style, FeedbackRequest, FeedbackResponse, SummarizeRequest, SummarizeResponse, GenerationsResponse } from '../types';
+import type { GenerateRequest, GenerateResponse, Style, FeedbackRequest, FeedbackResponse, SummarizeRequest, SummarizeResponse, GenerationsResponse, RefineRequest } from '../types';
 
 const API_BASE_URL = 'http://localhost:3001/api';
 
@@ -82,6 +82,15 @@ export async function getGenerations(styleId?: string): Promise<GenerationsRespo
   const params = styleId ? { params: { styleId } } : {};
   const response = await apiClient.get<GenerationsResponse>('/generations', params);
   return response.data;
+}
+
+export async function refineSketches(request: RefineRequest, signal?: AbortSignal): Promise<GenerateResponse> {
+  const response = await apiClient.post<GenerateResponse>('/refine', request, { signal });
+  return response.data;
+}
+
+export async function confirmGeneration(dirName: string): Promise<void> {
+  await apiClient.post(`/generations/${dirName}/confirm`);
 }
 
 export function getGeneratedImageUrl(dirName: string, filename: string): string {

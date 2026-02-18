@@ -62,7 +62,7 @@ var MockGenerationService = class {
       ]
     };
     const sketches = Array.from({ length: numImages }, (_, i) => ({
-      id: `sketch_${i}`,
+      id: `${timestamp}_sketch_${i}`,
       imagePath: `/mock-outputs/placeholder-${i}.png`,
       resolution: [1024, 1024],
       metadata: {
@@ -187,6 +187,70 @@ router.post("/generate", async (req, res) => {
       success: false,
       error: {
         code: "GENERATION_ERROR",
+        message: error instanceof Error ? error.message : "Unknown error occurred"
+      }
+    });
+  }
+});
+router.post("/refine", async (req, res) => {
+  const abortController = new AbortController();
+  res.on("close", () => {
+    if (!res.writableEnded) {
+      abortController.abort();
+    }
+  });
+  try {
+    const { refinePrompt, selectedImagePaths, styleId, sessionId } = req.body;
+    if (!refinePrompt || !selectedImagePaths?.length || !styleId) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: "INVALID_REQUEST",
+          message: "Missing required fields: refinePrompt, selectedImagePaths, and styleId are required"
+        }
+      });
+    }
+    const pythonHealthy = await checkPythonHealth();
+    if (pythonHealthy) {
+      try {
+        const response = await fetchFromPython("/refine", {
+          method: "POST",
+          body: JSON.stringify({ refinePrompt, selectedImagePaths, styleId, sessionId })
+        }, abortController.signal);
+        return res.json(response);
+      } catch (pythonError) {
+        if (pythonError.name === "AbortError") {
+          console.log("Refine cancelled by client");
+          return;
+        }
+        const message = pythonError instanceof Error ? pythonError.message : "Unknown error";
+        console.error("Python refine error:", message);
+        return res.status(502).json({
+          success: false,
+          error: {
+            code: "REFINE_ERROR",
+            message
+          }
+        });
+      }
+    }
+    res.status(503).json({
+      success: false,
+      error: {
+        code: "BACKEND_UNAVAILABLE",
+        message: "Python backend is required for refine but is not available"
+      }
+    });
+  } catch (error) {
+    if (error.name === "AbortError") {
+      console.log("Refine cancelled by client");
+      return;
+    }
+    console.error("Refine error:", error);
+    res.status(500).json({
+      success: false,
+      error: {
+        code: "REFINE_ERROR",
         message: error instanceof Error ? error.message : "Unknown error occurred"
       }
     });
@@ -545,6 +609,21 @@ router4.get("/generations", async (req, res) => {
         message: error instanceof Error ? error.message : "Failed to fetch generations"
       }
     });
+  }
+});
+router4.post("/generations/:dirName/confirm", async (req, res) => {
+  try {
+    const pythonHealthy = await checkPythonHealth();
+    if (!pythonHealthy) {
+      return res.status(503).json({ success: false, error: { code: "BACKEND_UNAVAILABLE", message: "Python backend is not available" } });
+    }
+    const response = await fetchFromPython(`/generations/${req.params.dirName}/confirm`, {
+      method: "POST"
+    });
+    return res.json(response);
+  } catch (error) {
+    console.error("Error confirming generation:", error);
+    res.status(500).json({ success: false, error: { code: "CONFIRM_ERROR", message: error instanceof Error ? error.message : "Failed to confirm generation" } });
   }
 });
 var generations_default = router4;

@@ -3,7 +3,7 @@
 import { Router } from 'express';
 import { MockGenerationService } from '../services/mock-service.js';
 import { fetchFromPython, checkPythonHealth } from '../services/python-client.js';
-import type { GenerateRequest, GenerateResponse } from '../../../shared/schema/api-contracts.js';
+import type { GenerateRequest, GenerateResponse, RefineRequest } from '../../../shared/schema/api-contracts.js';
 
 const router = Router();
 const mockService = new MockGenerationService();
@@ -81,6 +81,78 @@ router.post('/generate', async (req, res) => {
       success: false,
       error: {
         code: 'GENERATION_ERROR',
+        message: error instanceof Error ? error.message : 'Unknown error occurred'
+      }
+    });
+  }
+});
+
+router.post('/refine', async (req, res) => {
+  const abortController = new AbortController();
+  res.on('close', () => {
+    if (!res.writableEnded) {
+      abortController.abort();
+    }
+  });
+
+  try {
+    const { refinePrompt, selectedImagePaths, styleId, sessionId } = req.body as RefineRequest;
+
+    // Validate required fields
+    if (!refinePrompt || !selectedImagePaths?.length || !styleId) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_REQUEST',
+          message: 'Missing required fields: refinePrompt, selectedImagePaths, and styleId are required'
+        }
+      });
+    }
+
+    // Refine requires the real Python backend — no mock fallback
+    const pythonHealthy = await checkPythonHealth();
+
+    if (pythonHealthy) {
+      try {
+        const response = await fetchFromPython<GenerateResponse>('/refine', {
+          method: 'POST',
+          body: JSON.stringify({ refinePrompt, selectedImagePaths, styleId, sessionId })
+        }, abortController.signal);
+        return res.json(response);
+      } catch (pythonError) {
+        if ((pythonError as Error).name === 'AbortError') {
+          console.log('Refine cancelled by client');
+          return;
+        }
+        const message = pythonError instanceof Error ? pythonError.message : 'Unknown error';
+        console.error('Python refine error:', message);
+        return res.status(502).json({
+          success: false,
+          error: {
+            code: 'REFINE_ERROR',
+            message,
+          }
+        });
+      }
+    }
+
+    res.status(503).json({
+      success: false,
+      error: {
+        code: 'BACKEND_UNAVAILABLE',
+        message: 'Python backend is required for refine but is not available'
+      }
+    });
+  } catch (error) {
+    if ((error as Error).name === 'AbortError') {
+      console.log('Refine cancelled by client');
+      return;
+    }
+    console.error('Refine error:', error);
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'REFINE_ERROR',
         message: error instanceof Error ? error.message : 'Unknown error occurred'
       }
     });

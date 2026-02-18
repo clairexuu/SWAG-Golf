@@ -41,8 +41,14 @@ def list_generations(
             except (json.JSONDecodeError, IOError):
                 continue
 
+            # Skip unconfirmed entries (cancelled generations)
+            # Old entries without "archived" field are shown for backwards compat
+            if meta.get("archived") is False:
+                continue
+
             # Normalize legacy vs current schema
-            user_prompt = meta.get("user_prompt") or meta.get("prompt", "")
+            mode = meta.get("mode", "generate")
+            user_prompt = meta.get("user_prompt") or meta.get("refine_prompt") or meta.get("prompt", "")
             if not user_prompt:
                 continue
 
@@ -57,6 +63,7 @@ def list_generations(
                 "timestamp": meta.get("timestamp", entry.name),
                 "dir_name": entry.name,
                 "user_prompt": user_prompt,
+                "mode": mode,
                 "style": style_info,
                 "image_count": len(images),
                 "images": images,
@@ -72,5 +79,28 @@ def list_generations(
             "generations": [convert_keys_to_camel(g) for g in generations],
         }
 
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/generations/{dir_name}/confirm")
+def confirm_generation(dir_name: str):
+    """Mark a generation as confirmed so it appears in the archive."""
+    dir_path = GENERATED_DIR / dir_name
+    metadata_path = dir_path / "metadata.json"
+
+    if not metadata_path.exists():
+        raise HTTPException(status_code=404, detail="Generation not found")
+
+    try:
+        with open(metadata_path, "r") as f:
+            meta = json.load(f)
+
+        meta["archived"] = True
+
+        with open(metadata_path, "w") as f:
+            json.dump(meta, f, indent=2)
+
+        return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

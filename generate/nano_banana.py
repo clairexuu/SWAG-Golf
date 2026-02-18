@@ -154,3 +154,76 @@ class NanaBananaAdapter(ImageModelAdapter):
               (f", {fail_count} failed" if fail_count else ""))
 
         return generated_paths, image_errors
+
+    def refine(
+        self,
+        refine_prompt: str,
+        original_context: str,
+        refine_history: List[str],
+        source_image_paths: List[str],
+        config: GenerationConfig,
+    ) -> Tuple[List[Optional[str]], List[Optional[str]]]:
+        """
+        Refine existing sketch images. Bypasses format_prompt() entirely.
+
+        Each source image produces exactly 1 refined output (1:1 mapping).
+
+        Args:
+            refine_prompt: User's modification instructions
+            original_context: Original GPT-compiled refined_intent
+            refine_history: Previous refine prompts in order (for chaining)
+            source_image_paths: Absolute paths to sketches to modify
+            config: Generation configuration
+
+        Returns:
+            Tuple of (image_paths, image_errors)
+        """
+        if self.client is None:
+            raise RuntimeError("Image generation client not initialized. Set GOOGLE_API_KEY in your environment.")
+
+        # Create output directory with timestamp
+        timestamp = get_timestamp()
+        output_dir = create_output_directory(config.output_dir, timestamp)
+
+        print(f"Calling Nano Banana API (refine mode)...")
+        print(f"  Refine prompt: {refine_prompt[:80]}...")
+        print(f"  Source images: {len(source_image_paths)}")
+
+        image_data_list, image_errors = self.client.refine(
+            refine_prompt=refine_prompt,
+            original_context=original_context,
+            refine_history=refine_history,
+            source_images=source_image_paths,
+            aspect_ratio=config.aspect_ratio,
+        )
+
+        # Save successful images (with optional grayscale conversion) in parallel
+        generated_paths = [None] * len(image_data_list)
+        success_indices = [i for i, data in enumerate(image_data_list) if data is not None]
+
+        if success_indices:
+            def _process_and_save(i, data):
+                if config.enforce_grayscale:
+                    data = convert_to_grayscale(data)
+                out = Path(output_dir) / f"sketch_{i}.png"
+                with open(out, 'wb') as f:
+                    f.write(data)
+                return str(out.absolute())
+
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            with ThreadPoolExecutor(max_workers=len(success_indices)) as pool:
+                futures = {
+                    pool.submit(_process_and_save, i, image_data_list[i]): i
+                    for i in success_indices
+                }
+                for future in as_completed(futures):
+                    idx = futures[future]
+                    generated_paths[idx] = future.result()
+
+        success_count = sum(1 for p in generated_paths if p is not None)
+        fail_count = sum(1 for e in image_errors if e is not None)
+        grayscale_msg = " (converted to grayscale)" if config.enforce_grayscale else ""
+        print(f"[OK] Refined {success_count}/{len(image_data_list)} images{grayscale_msg}" +
+              (f", {fail_count} failed" if fail_count else ""))
+
+        return generated_paths, image_errors

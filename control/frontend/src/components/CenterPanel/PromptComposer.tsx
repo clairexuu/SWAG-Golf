@@ -1,45 +1,50 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { ArrowUpIcon, SpinnerIcon, FeedbackIcon, PencilIcon } from '../shared/Icons';
+import { useState, useRef, useCallback } from 'react';
+import { ArrowUpIcon, SpinnerIcon, FeedbackIcon, PencilIcon, RefineIcon } from '../shared/Icons';
+
+export type ComposerMode = 'concept' | 'feedback' | 'refine';
 
 interface PromptComposerProps {
   onGenerate: (input: string) => void;
   onSubmitFeedback: (feedback: string) => void;
+  onSubmitRefine: (refinePrompt: string) => void;
   isGenerating: boolean;
   disabled: boolean;
   hasSketches: boolean;
+  mode: ComposerMode;
+  onModeChange: (mode: ComposerMode) => void;
+  selectedSketchCount: number;
 }
-
-type Mode = 'concept' | 'feedback';
 
 export default function PromptComposer({
   onGenerate,
   onSubmitFeedback,
+  onSubmitRefine,
   isGenerating,
   disabled,
   hasSketches,
+  mode,
+  onModeChange,
+  selectedSketchCount,
 }: PromptComposerProps) {
-  const [mode, setMode] = useState<Mode>('concept');
-  const [input, setInput] = useState('');
+  const [inputs, setInputs] = useState({ concept: '', feedback: '', refine: '' });
+  const input = inputs[mode];
+  const setInput = (value: string) => setInputs(prev => ({ ...prev, [mode]: value }));
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  // Auto-grow textarea
-  useEffect(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = Math.min(el.scrollHeight, 200) + 'px';
-  }, [input]);
 
   const handleSubmit = useCallback(() => {
     if (!input.trim() || disabled || isGenerating) return;
 
     if (mode === 'concept') {
       onGenerate(input);
-    } else {
+    } else if (mode === 'feedback') {
       onSubmitFeedback(input);
       setInput('');
+    } else if (mode === 'refine') {
+      if (selectedSketchCount === 0) return;
+      onSubmitRefine(input);
+      setInput('');
     }
-  }, [input, disabled, isGenerating, mode, onGenerate, onSubmitFeedback]);
+  }, [input, disabled, isGenerating, mode, selectedSketchCount, onGenerate, onSubmitFeedback, onSubmitRefine]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -51,9 +56,17 @@ export default function PromptComposer({
   const placeholder =
     mode === 'concept'
       ? 'Describe your concept sketch idea...\n\nExample: playful golf ball character with cartoonish features'
-      : 'Write feedback on the generated images here. Your feedback will be applied to all future generations of the current style.\n\nExample: make the lines thicker and add more detail to the eyes';
+      : mode === 'feedback'
+        ? 'Write feedback on the generated images here. Your feedback will be applied to all future generations of the current style.\n\nExample: make the lines thicker and add more detail to the eyes'
+        : selectedSketchCount === 0
+          ? 'Select one or more sketches above to refine, then describe your changes here...'
+          : `Describe how to refine the ${selectedSketchCount} selected sketch${selectedSketchCount > 1 ? 'es' : ''}...\n\nExample: put on a pair of sunglasses`;
 
-  const buttonLabel = mode === 'concept' ? 'Generate' : 'Submit';
+  const buttonLabel =
+    mode === 'concept' ? 'Generate' : mode === 'feedback' ? 'Submit' : 'Generate';
+
+  const isSubmitDisabled =
+    disabled || isGenerating || !input.trim() || (mode === 'refine' && selectedSketchCount === 0);
 
   return (
     <div className="flex-shrink-0 p-4">
@@ -61,7 +74,7 @@ export default function PromptComposer({
         {/* Mode tabs */}
         <div className="flex items-center px-4 pt-3 gap-1">
           <button
-            onClick={() => setMode('concept')}
+            onClick={() => onModeChange('concept')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-btn text-xs font-semibold uppercase tracking-wider transition-all ${
               mode === 'concept'
                 ? 'bg-swag-green/15 text-swag-green'
@@ -72,7 +85,21 @@ export default function PromptComposer({
             New Concept
           </button>
           <button
-            onClick={() => hasSketches && setMode('feedback')}
+            onClick={() => hasSketches && onModeChange('refine')}
+            disabled={!hasSketches}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-btn text-xs font-semibold uppercase tracking-wider transition-all ${
+              mode === 'refine'
+                ? 'bg-amber-400/15 text-amber-400'
+                : hasSketches
+                  ? 'text-swag-text-quaternary hover:text-swag-text-secondary'
+                  : 'text-swag-text-quaternary/50 cursor-not-allowed'
+            }`}
+          >
+            <RefineIcon className="w-3.5 h-3.5" />
+            Refine
+          </button>
+          <button
+            onClick={() => hasSketches && onModeChange('feedback')}
             disabled={!hasSketches}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-btn text-xs font-semibold uppercase tracking-wider transition-all ${
               mode === 'feedback'
@@ -95,7 +122,7 @@ export default function PromptComposer({
           onKeyDown={handleKeyDown}
           placeholder={disabled ? 'Select a style to begin...' : placeholder}
           disabled={disabled || isGenerating}
-          className="prompt-textarea min-h-[60px]"
+          className="prompt-textarea min-h-[60px] overflow-y-auto"
           rows={2}
         />
 
@@ -105,6 +132,13 @@ export default function PromptComposer({
             {input.length > 0 && (
               <span className="text-xs text-swag-text-quaternary">
                 {input.length} chars
+              </span>
+            )}
+            {mode === 'refine' && (
+              <span className={`text-xs font-medium ${selectedSketchCount > 0 ? 'text-amber-400' : 'text-swag-text-quaternary'}`}>
+                {selectedSketchCount === 0
+                  ? 'Select sketches to refine'
+                  : `${selectedSketchCount} sketch${selectedSketchCount > 1 ? 'es' : ''} selected`}
               </span>
             )}
           </div>
@@ -117,13 +151,15 @@ export default function PromptComposer({
 
             <button
               onClick={handleSubmit}
-              disabled={disabled || isGenerating || !input.trim()}
+              disabled={isSubmitDisabled}
               className={`flex items-center gap-2 px-4 py-2 rounded-btn font-bold text-sm uppercase tracking-wider transition-all ${
                 isGenerating
                   ? 'bg-swag-green/20 text-swag-green animate-pulse-glow'
                   : mode === 'concept'
                     ? 'bg-swag-green text-black hover:bg-swag-green-muted hover:shadow-glow-green active:scale-[0.97] disabled:bg-surface-4 disabled:text-swag-text-quaternary disabled:cursor-not-allowed disabled:shadow-none'
-                    : 'bg-swag-teal text-black hover:bg-swag-teal/80 active:scale-[0.97] disabled:bg-surface-4 disabled:text-swag-text-quaternary disabled:cursor-not-allowed disabled:shadow-none'
+                    : mode === 'feedback'
+                      ? 'bg-swag-teal text-black hover:bg-swag-teal/80 active:scale-[0.97] disabled:bg-surface-4 disabled:text-swag-text-quaternary disabled:cursor-not-allowed disabled:shadow-none'
+                      : 'bg-amber-400 text-black hover:bg-amber-300 active:scale-[0.97] disabled:bg-surface-4 disabled:text-swag-text-quaternary disabled:cursor-not-allowed disabled:shadow-none'
               }`}
             >
               {isGenerating ? (

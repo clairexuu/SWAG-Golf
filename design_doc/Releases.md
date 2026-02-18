@@ -1,0 +1,32 @@
+# Release History
+
+## v1.0.0 — Initial Release
+
+First packaged release of the SWAG Concept Sketch Agent desktop app.
+
+### Features
+
+- **Sketch Generation**: Natural language prompt to concept sketch via RAG pipeline (Style Selection → Prompt Compilation with GPT → RAG Retrieval → Image Generation via Nano Banana)
+- **Sketch Refinement**: Select individual sketches to regenerate with feedback, keeping the rest intact
+- **Style Library**: Create, edit, and delete styles with visual rules and reference images. Bundled with default "general" style
+- **Archive**: Browse past generations filtered by style (up to 100 per style)
+- **Feedback Loop**: Per-session feedback collection with GPT-summarized style learning
+- **Desktop App**: Electron-packaged with embedded Express API and standalone Python backend (auto-downloads Python 3.12, installs deps on first launch)
+
+### Architecture
+
+- Frontend: React 18 + TypeScript + TailwindCSS + Vite
+- API Layer: Express.js (port 3001) proxying to Python FastAPI (port 8000)
+- Image Generation: Nano Banana (model-agnostic adapter layer)
+- RAG: CLIP embeddings with hard style filter + top-K semantic retrieval
+- Storage: Filesystem-based (JSON styles, generated images, embedding cache)
+
+### Platforms
+
+- macOS (Apple Silicon / arm64): `.dmg` + `.zip`
+- Windows (x64): NSIS installer `.exe` + `.zip`
+
+### Notes
+
+- Users must download this version manually from GitHub Releases
+- Auto-update support is included starting from this version — all future updates will be delivered automatically

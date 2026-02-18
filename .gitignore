@@ -16,3 +16,5 @@ python-standalone/
 *.p8
 design_doc/Progress.md
 test_pipeline.py
+.code-hash
+.gitignore
