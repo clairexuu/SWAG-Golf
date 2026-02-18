@@ -245,6 +245,7 @@ export GH_TOKEN="ghp_your_github_personal_access_token"
 cd control/electron
 npm run release:mac     # macOS build + upload
 npm run release:win     # Windows build + upload (run on Windows machine)
+
 ```
 
 This creates a GitHub Release containing:

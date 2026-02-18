@@ -1,17 +1,15 @@
 // notarize.js — electron-builder afterSign hook
 // Notarizes the macOS .app bundle using Apple's Notary REST API.
-// Bypasses xcrun notarytool entirely (avoids SIGBUS crash).
+// Uses curl for S3 upload (avoids AWS SDK Node 18 incompatibility).
+// Uses REST API instead of xcrun notarytool (avoids SIGBUS crash).
 
 const { execFileSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
-const jwt = require('jsonwebtoken');
-const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 
-const NOTARY_API_BASE = 'https://appstoreconnect.apple.com/notary/v2';
+const NOTARY_API = 'https://appstoreconnect.apple.com/notary/v2';
 
-// Minimal .env parser (matches parseEnvFile in python-manager.ts)
 function loadEnv(envPath) {
   if (!fs.existsSync(envPath)) return {};
   const content = fs.readFileSync(envPath, 'utf-8');
@@ -32,17 +30,26 @@ function loadEnv(envPath) {
   return env;
 }
 
-function generateJwt(keyId, issuerId, privateKey) {
+// ES256 JWT using Node's built-in crypto (no jsonwebtoken dependency)
+function generateJwt(keyId, issuerId, privateKeyPem) {
+  const header = Buffer.from(JSON.stringify({ alg: 'ES256', kid: keyId, typ: 'JWT' })).toString('base64url');
   const now = Math.floor(Date.now() / 1000);
-  const payload = { iss: issuerId, aud: 'appstoreconnect-v1', iat: now, exp: now + 900 };
-  return jwt.sign(payload, privateKey, { algorithm: 'ES256', header: { alg: 'ES256', kid: keyId, typ: 'JWT' } });
+  const payload = Buffer.from(JSON.stringify({
+    iss: issuerId, aud: 'appstoreconnect-v1', iat: now, exp: now + 900,
+  })).toString('base64url');
+  const signingInput = `${header}.${payload}`;
+  const sig = crypto.sign('SHA256', Buffer.from(signingInput), {
+    key: privateKeyPem, dsaEncoding: 'ieee-p1363',
+  });
+  return `${signingInput}.${sig.toString('base64url')}`;
+}
+
+function sha256(data) {
+  return crypto.createHash('sha256').update(data).digest('hex');
 }
 
 function sha256File(filePath) {
-  const hash = crypto.createHash('sha256');
-  const data = fs.readFileSync(filePath);
-  hash.update(data);
-  return hash.digest('hex');
+  return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
 }
 
 function sleep(ms) {
@@ -50,118 +57,189 @@ function sleep(ms) {
 }
 
 async function apiRequest(method, urlPath, token, body) {
-  const url = `${NOTARY_API_BASE}${urlPath}`;
   const opts = {
     method,
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
   };
   if (body) opts.body = JSON.stringify(body);
-
-  const res = await fetch(url, opts);
+  const res = await fetch(`${NOTARY_API}${urlPath}`, opts);
   const text = await res.text();
-  if (!res.ok) {
-    throw new Error(`Notary API ${method} ${urlPath} failed (${res.status}): ${text}`);
-  }
+  if (!res.ok) throw new Error(`Notary API ${method} ${urlPath} failed (${res.status}): ${text}`);
   return JSON.parse(text);
+}
+
+// Upload to S3 using Node's built-in https module with AWS SigV4 signing.
+// Bypasses @aws-sdk/client-s3 (broken on Node 18) and curl.
+async function s3Upload(zipPath, bucket, objectKey, creds, region = 'us-west-2') {
+  const https = require('https');
+  const fileData = fs.readFileSync(zipPath);
+  const contentHash = crypto.createHash('sha256').update(fileData).digest('hex');
+
+  const host = `${bucket}.s3.${region}.amazonaws.com`;
+  const uri = '/' + objectKey.split('/').map(encodeURIComponent).join('/');
+
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    // Recompute timestamp for each attempt
+    const now = new Date();
+    const amzDate = now.toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+    const dateStamp = amzDate.slice(0, 8);
+
+    // Build canonical request (headers sorted by lowercase name)
+    const hdrs = {
+      'content-type': 'application/zip',
+      'host': host,
+      'x-amz-content-sha256': contentHash,
+      'x-amz-date': amzDate,
+      'x-amz-security-token': creds.sessionToken,
+    };
+    const signedKeys = Object.keys(hdrs).sort();
+    const signedHeaders = signedKeys.join(';');
+    const canonicalHeaders = signedKeys.map(k => `${k}:${hdrs[k]}`).join('\n') + '\n';
+    const canonicalRequest = ['PUT', uri, '', canonicalHeaders, signedHeaders, contentHash].join('\n');
+
+    // String to sign
+    const scope = `${dateStamp}/${region}/s3/aws4_request`;
+    const stringToSign = ['AWS4-HMAC-SHA256', amzDate, scope, sha256(canonicalRequest)].join('\n');
+
+    // Signing key chain
+    const hmac = (key, data) => crypto.createHmac('sha256', key).update(data).digest();
+    let sigKey = hmac(`AWS4${creds.secretAccessKey}`, dateStamp);
+    sigKey = hmac(sigKey, region);
+    sigKey = hmac(sigKey, 's3');
+    sigKey = hmac(sigKey, 'aws4_request');
+    const signature = crypto.createHmac('sha256', sigKey).update(stringToSign).digest('hex');
+    const auth = `AWS4-HMAC-SHA256 Credential=${creds.accessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+
+    try {
+      await new Promise((resolve, reject) => {
+        const req = https.request({
+          hostname: host,
+          path: uri,
+          method: 'PUT',
+          headers: {
+            'Authorization': auth,
+            'Content-Type': 'application/zip',
+            'Content-Length': fileData.length,
+            'x-amz-content-sha256': contentHash,
+            'x-amz-date': amzDate,
+            'x-amz-security-token': creds.sessionToken,
+          },
+        }, (res) => {
+          let body = '';
+          res.on('data', chunk => body += chunk);
+          res.on('end', () => {
+            if (res.statusCode >= 200 && res.statusCode < 300) {
+              resolve();
+            } else {
+              reject(new Error(`S3 HTTP ${res.statusCode}: ${body}`));
+            }
+          });
+        });
+
+        req.on('error', (err) => reject(new Error(`S3 connection error: ${err.code || err.message}`)));
+
+        // Write in 1MB chunks with backpressure handling
+        const CHUNK = 1024 * 1024;
+        let offset = 0;
+        function write() {
+          let ok = true;
+          while (ok && offset < fileData.length) {
+            const end = Math.min(offset + CHUNK, fileData.length);
+            const chunk = fileData.subarray(offset, end);
+            offset = end;
+            if (offset >= fileData.length) {
+              req.end(chunk);
+            } else {
+              ok = req.write(chunk);
+            }
+          }
+          if (offset < fileData.length) {
+            req.once('drain', write);
+          }
+        }
+        write();
+      });
+      return; // Success
+    } catch (err) {
+      console.error(`Notarize: Upload attempt ${attempt}/${maxAttempts} failed: ${err.message}`);
+      if (attempt === maxAttempts) throw err;
+      console.log('Notarize: Retrying in 5 seconds...');
+      await sleep(5000);
+    }
+  }
 }
 
 // electron-builder afterSign hook
 exports.default = async function notarizing(context) {
   const { electronPlatformName, appOutDir } = context;
-
   if (electronPlatformName !== 'darwin') {
-    console.log('Notarize: Skipping — not a macOS build.');
+    console.log('Notarize: Skipping — not macOS.');
     return;
   }
 
-  const envPath = path.join(__dirname, '.env');
-  const envVars = loadEnv(envPath);
-
+  const envVars = loadEnv(path.join(__dirname, '.env'));
   const keyId = process.env.APPLE_API_KEY_ID || envVars.APPLE_API_KEY_ID;
   const issuerId = process.env.APPLE_API_ISSUER_ID || envVars.APPLE_API_ISSUER_ID;
   const keyPathRaw = process.env.APPLE_API_KEY_PATH || envVars.APPLE_API_KEY_PATH;
 
   if (!keyId || !issuerId || !keyPathRaw) {
-    console.warn('Notarize: Missing Apple API key credentials (APPLE_API_KEY_ID, APPLE_API_ISSUER_ID, APPLE_API_KEY_PATH). Skipping notarization.');
+    console.warn('Notarize: Missing Apple API key credentials. Skipping notarization.');
     return;
   }
 
   const keyPath = path.resolve(__dirname, keyPathRaw);
-  if (!fs.existsSync(keyPath)) {
-    throw new Error(`Notarize: Private key file not found: ${keyPath}`);
-  }
+  if (!fs.existsSync(keyPath)) throw new Error(`Notarize: Private key not found: ${keyPath}`);
   const privateKey = fs.readFileSync(keyPath, 'utf-8');
 
   const appName = context.packager.appInfo.productFilename;
   const appPath = path.join(appOutDir, `${appName}.app`);
+  const zipPath = path.join(appOutDir, `${appName}.zip`);
 
   console.log(`Notarize: Submitting ${appPath} via Apple Notary REST API...`);
 
-  // Step 1: Generate JWT
-  const token = generateJwt(keyId, issuerId, privateKey);
-  console.log('Notarize: JWT generated.');
-
-  // Step 2: Zip the .app for submission
-  const zipPath = path.join(appOutDir, `${appName}.zip`);
+  // Step 1: Zip the .app
   console.log('Notarize: Zipping app bundle...');
   execFileSync('ditto', ['-c', '-k', '--sequesterRsrc', '--keepParent',
     `${appName}.app`, zipPath], { cwd: appOutDir, stdio: 'inherit' });
 
   try {
-    // Step 3: Compute SHA-256 and submit to Apple
+    // Step 2: Hash and create submission
     console.log('Notarize: Computing SHA-256...');
-    const sha256 = sha256File(zipPath);
-    console.log(`Notarize: SHA-256 = ${sha256}`);
+    const fileSha256 = sha256File(zipPath);
+    console.log(`Notarize: SHA-256 = ${fileSha256}`);
 
+    const token = generateJwt(keyId, issuerId, privateKey);
     console.log('Notarize: Creating submission...');
     const submitRes = await apiRequest('POST', '/submissions', token, {
-      submissionName: `${appName}.zip`,
-      sha256,
+      submissionName: `${appName}.zip`, sha256: fileSha256,
     });
-
     const submissionId = submitRes.data.id;
     const attrs = submitRes.data.attributes;
     console.log(`Notarize: Submission ID = ${submissionId}`);
 
-    // Step 4: Upload zip to S3
+    // Step 3: Upload to S3 via Node https
     console.log('Notarize: Uploading to Apple S3...');
-    const s3 = new S3Client({
-      region: 'us-west-2',
-      credentials: {
-        accessKeyId: attrs.awsAccessKeyId,
-        secretAccessKey: attrs.awsSecretAccessKey,
-        sessionToken: attrs.awsSessionToken,
-      },
+    await s3Upload(zipPath, attrs.bucket, attrs.object, {
+      accessKeyId: attrs.awsAccessKeyId,
+      secretAccessKey: attrs.awsSecretAccessKey,
+      sessionToken: attrs.awsSessionToken,
     });
-
-    const zipData = fs.readFileSync(zipPath);
-    await s3.send(new PutObjectCommand({
-      Bucket: attrs.bucket,
-      Key: attrs.object,
-      Body: zipData,
-    }));
     console.log('Notarize: Upload complete.');
 
-    // Step 5: Poll for status
+    // Step 4: Poll for status
     console.log('Notarize: Waiting for Apple to process...');
-    const pollInterval = 15000;
-    const timeout = 30 * 60 * 1000;
     const startTime = Date.now();
+    const timeout = 30 * 60 * 1000;
 
     while (true) {
       if (Date.now() - startTime > timeout) {
-        throw new Error('Notarize: Timed out waiting for Apple to process (30 minutes).');
+        throw new Error('Notarize: Timed out waiting for Apple (30 minutes).');
       }
+      await sleep(15000);
 
-      await sleep(pollInterval);
-
-      // Regenerate JWT if we've been polling a while (tokens expire after 15 min)
       const currentToken = (Date.now() - startTime > 10 * 60 * 1000)
-        ? generateJwt(keyId, issuerId, privateKey)
-        : token;
+        ? generateJwt(keyId, issuerId, privateKey) : token;
 
       const statusRes = await apiRequest('GET', `/submissions/${submissionId}`, currentToken);
       const status = statusRes.data.attributes.status;
@@ -171,15 +249,10 @@ exports.default = async function notarizing(context) {
         console.log(`Notarize: Apple accepted the submission. (${elapsed}s)`);
         break;
       } else if (status === 'Invalid' || status === 'Rejected') {
-        // Try to fetch the log
         try {
           const logRes = await apiRequest('GET', `/submissions/${submissionId}/logs`, currentToken);
           const logUrl = logRes.data.attributes.developerLogUrl;
-          if (logUrl) {
-            const logFetch = await fetch(logUrl);
-            const logText = await logFetch.text();
-            console.error('Notarize: Apple rejection log:\n', logText);
-          }
+          if (logUrl) console.error('Notarize: Apple log:\n', await (await fetch(logUrl)).text());
         } catch (_) {}
         throw new Error(`Notarize: Notarization failed with status: ${status}`);
       }
@@ -190,7 +263,7 @@ exports.default = async function notarizing(context) {
     try { fs.unlinkSync(zipPath); } catch (_) {}
   }
 
-  // Step 6: Staple the ticket to the .app
+  // Step 5: Staple
   console.log('Notarize: Stapling notarization ticket...');
   execFileSync('xcrun', ['stapler', 'staple', appPath], { stdio: 'inherit' });
 

@@ -1,6 +1,6 @@
 {
   "name": "swag-concept-sketch-electron",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "SWAG Concept Sketch Agent Desktop App",
   "main": "dist/main.js",
   "scripts": {
@@ -22,7 +22,6 @@
     "tar": "^6.2.1"
   },
   "devDependencies": {
-    "@aws-sdk/client-s3": "^3.967.0",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/node": "^20.11.5",
@@ -30,7 +29,6 @@
     "electron": "^28.1.4",
     "electron-builder": "^24.9.1",
     "esbuild": "^0.19.0",
-    "jsonwebtoken": "^9.0.3",
     "typescript": "^5.3.3"
   },
   "build": {
@@ -41,7 +39,8 @@
       {
         "provider": "github",
         "owner": "clairexuu",
-        "repo": "SWAG-Golf"
+        "repo": "SWAG-Golf",
+        "releaseType": "release"
       }
     ],
     "files": [
