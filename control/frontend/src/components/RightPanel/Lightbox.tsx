@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import type { Sketch } from '../../types';
-import { CloseIcon, ChevronLeftIcon, ChevronRightIcon, DownloadIcon } from '../shared/Icons';
+import { CloseIcon, ChevronLeftIcon, ChevronRightIcon, DownloadIcon, ErrorCircleIcon, SpinnerIcon, ImagePlaceholderIcon } from '../shared/Icons';
+import { useImageLoad } from '../../hooks/useImageLoad';
 
 const API_BASE_URL = 'http://localhost:3001/api';
 const getImageUrl = (imagePath: string) => `${API_BASE_URL}${imagePath}`;
@@ -34,6 +35,10 @@ export default function Lightbox({ sketches, initialIndex, onClose, onDownload }
   }, [onClose, goNext, goPrev]);
 
   const currentSketch = sketches[currentIndex];
+  const imageSrc = currentSketch?.imagePath ? getImageUrl(currentSketch.imagePath) : null;
+  const { isLoading, hasError, imgSrc, handleLoad, handleError } = useImageLoad({ src: imageSrc });
+  const imageUnavailable = !currentSketch?.imagePath || hasError || !!currentSketch?.error;
+
   if (!currentSketch) return null;
 
   return (
@@ -52,7 +57,10 @@ export default function Lightbox({ sketches, initialIndex, onClose, onDownload }
           e.stopPropagation();
           onDownload(currentSketch);
         }}
-        className="absolute top-4 left-4 flex items-center gap-2 bg-surface-2/80 text-swag-white px-3 py-2 rounded-btn text-sm font-medium hover:bg-surface-3 transition-all z-10"
+        className={`absolute top-4 left-4 flex items-center gap-2 bg-surface-2/80 text-swag-white px-3 py-2 rounded-btn text-sm font-medium transition-all z-10 ${
+          imageUnavailable ? 'opacity-40 cursor-not-allowed' : 'hover:bg-surface-3'
+        }`}
+        disabled={imageUnavailable}
       >
         <DownloadIcon className="w-4 h-4" />
         Download
@@ -82,13 +90,42 @@ export default function Lightbox({ sketches, initialIndex, onClose, onDownload }
         </>
       )}
 
-      {/* Image */}
-      <img
-        src={currentSketch.imagePath ? getImageUrl(currentSketch.imagePath) : ''}
-        alt={`Sketch ${currentIndex + 1}`}
-        className="lightbox-image"
-        onClick={(e) => e.stopPropagation()}
-      />
+      {/* Image / Error / Loading */}
+      <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+        {currentSketch.error ? (
+          <div className="flex flex-col items-center gap-4 text-center px-8">
+            <ErrorCircleIcon className="w-16 h-16 text-red-400" />
+            <p className="text-sm font-medium text-red-400 uppercase tracking-wider">Generation Failed</p>
+            <p className="text-sm text-swag-text-tertiary max-w-md">{currentSketch.error}</p>
+          </div>
+        ) : hasError ? (
+          <div className="flex flex-col items-center gap-4 text-center px-8">
+            <ErrorCircleIcon className="w-16 h-16 text-swag-text-tertiary" />
+            <p className="text-sm font-medium text-swag-text-secondary uppercase tracking-wider">Image Unavailable</p>
+            <p className="text-xs text-swag-text-tertiary">The image could not be loaded</p>
+          </div>
+        ) : imgSrc ? (
+          <>
+            <img
+              src={imgSrc}
+              alt={`Sketch ${currentIndex + 1}`}
+              className={`lightbox-image transition-opacity duration-300 ${isLoading ? 'opacity-0' : 'opacity-100'}`}
+              onLoad={handleLoad}
+              onError={handleError}
+            />
+            {isLoading && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <SpinnerIcon className="w-10 h-10 text-swag-text-tertiary" />
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="flex flex-col items-center gap-4 text-center px-8">
+            <ImagePlaceholderIcon className="w-16 h-16 text-swag-text-quaternary" />
+            <p className="text-sm text-swag-text-tertiary">No image available</p>
+          </div>
+        )}
+      </div>
 
       {/* Counter */}
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-surface-2/80 text-swag-white text-sm font-medium px-4 py-2 rounded-btn z-10">

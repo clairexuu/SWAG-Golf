@@ -43,55 +43,6 @@ var import_url = require("url");
 // ../api/src/routes/generate.ts
 var import_express = require("express");
 
-// ../api/src/services/mock-service.ts
-var MockGenerationService = class {
-  async generate(request) {
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    const numImages = request.numImages || 4;
-    const timestamp = (/* @__PURE__ */ new Date()).toISOString();
-    const mockPromptSpec = {
-      intent: request.input,
-      refinedIntent: `Mock refined: ${request.input}`,
-      negativeConstraints: [],
-      enforcedConstraints: [
-        "Black & white or grayscale ONLY",
-        "Rough sketch / pencil / loose ink style",
-        "Thick outlines, minimal interior detail",
-        "Clean background",
-        "High contrast for visibility"
-      ]
-    };
-    const sketches = Array.from({ length: numImages }, (_, i) => ({
-      id: `${timestamp}_sketch_${i}`,
-      imagePath: `/mock-outputs/placeholder-${i}.png`,
-      resolution: [1024, 1024],
-      metadata: {
-        promptSpec: mockPromptSpec,
-        referenceImages: [],
-        retrievalScores: []
-      }
-    }));
-    const mockConfig = {
-      numImages,
-      resolution: [1024, 1024],
-      outputDir: "generated_outputs",
-      modelName: "nano-banana",
-      seed: void 0
-    };
-    return {
-      success: true,
-      data: {
-        timestamp,
-        sketches,
-        generationMetadata: {
-          styleId: request.styleId,
-          configUsed: mockConfig
-        }
-      }
-    };
-  }
-};
-
 // ../api/src/services/python-client.ts
 var PYTHON_API_URL = process.env.PYTHON_API_URL || "http://127.0.0.1:8000";
 async function fetchFromPython(endpoint, options = {}, signal) {
@@ -125,7 +76,11 @@ async function checkPythonHealth() {
 
 // ../api/src/routes/generate.ts
 var router = (0, import_express.Router)();
-var mockService = new MockGenerationService();
+var MAX_RETRIES = 2;
+var RETRY_DELAYS = [1e3, 2e3];
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 router.post("/generate", async (req, res) => {
   const abortController = new AbortController();
   res.on("close", () => {
@@ -153,30 +108,39 @@ router.post("/generate", async (req, res) => {
         }
       });
     }
-    const pythonHealthy = await checkPythonHealth();
-    if (pythonHealthy) {
-      try {
-        const response = await fetchFromPython("/generate", {
-          method: "POST",
-          body: JSON.stringify({ input, styleId, numImages: numImages || 4, experimentalMode, sessionId })
-        }, abortController.signal);
-        return res.json(response);
-      } catch (pythonError) {
-        if (pythonError.name === "AbortError") {
-          console.log("Generation cancelled by client");
-          return;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      if (abortController.signal.aborted)
+        return;
+      const pythonHealthy = await checkPythonHealth();
+      if (pythonHealthy) {
+        try {
+          const response = await fetchFromPython("/generate", {
+            method: "POST",
+            body: JSON.stringify({ input, styleId, numImages: numImages || 4, experimentalMode, sessionId })
+          }, abortController.signal);
+          return res.json(response);
+        } catch (pythonError) {
+          if (pythonError.name === "AbortError") {
+            console.log("Generation cancelled by client");
+            return;
+          }
+          console.error(`[Generate] Attempt ${attempt + 1} failed:`, pythonError);
         }
-        console.error("Python backend error, falling back to mock:", pythonError);
+      } else {
+        console.warn(`[Generate] Health check failed (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
+      }
+      if (attempt < MAX_RETRIES) {
+        console.log(`[Generate] Retrying in ${RETRY_DELAYS[attempt]}ms...`);
+        await delay(RETRY_DELAYS[attempt]);
       }
     }
-    console.log("Using mock generation service");
-    const result = await mockService.generate({
-      input,
-      styleId,
-      numImages: numImages || 4,
-      experimentalMode: experimentalMode || false
+    return res.status(503).json({
+      success: false,
+      error: {
+        code: "BACKEND_UNAVAILABLE",
+        message: "Generation service temporarily unavailable. Please try again or restart the service."
+      }
     });
-    res.json(result);
   } catch (error) {
     if (error.name === "AbortError") {
       console.log("Generation cancelled by client");
@@ -210,35 +174,37 @@ router.post("/refine", async (req, res) => {
         }
       });
     }
-    const pythonHealthy = await checkPythonHealth();
-    if (pythonHealthy) {
-      try {
-        const response = await fetchFromPython("/refine", {
-          method: "POST",
-          body: JSON.stringify({ refinePrompt, selectedImagePaths, styleId, sessionId })
-        }, abortController.signal);
-        return res.json(response);
-      } catch (pythonError) {
-        if (pythonError.name === "AbortError") {
-          console.log("Refine cancelled by client");
-          return;
-        }
-        const message = pythonError instanceof Error ? pythonError.message : "Unknown error";
-        console.error("Python refine error:", message);
-        return res.status(502).json({
-          success: false,
-          error: {
-            code: "REFINE_ERROR",
-            message
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      if (abortController.signal.aborted)
+        return;
+      const pythonHealthy = await checkPythonHealth();
+      if (pythonHealthy) {
+        try {
+          const response = await fetchFromPython("/refine", {
+            method: "POST",
+            body: JSON.stringify({ refinePrompt, selectedImagePaths, styleId, sessionId })
+          }, abortController.signal);
+          return res.json(response);
+        } catch (pythonError) {
+          if (pythonError.name === "AbortError") {
+            console.log("Refine cancelled by client");
+            return;
           }
-        });
+          console.error(`[Refine] Attempt ${attempt + 1} failed:`, pythonError);
+        }
+      } else {
+        console.warn(`[Refine] Health check failed (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
+      }
+      if (attempt < MAX_RETRIES) {
+        console.log(`[Refine] Retrying in ${RETRY_DELAYS[attempt]}ms...`);
+        await delay(RETRY_DELAYS[attempt]);
       }
     }
-    res.status(503).json({
+    return res.status(503).json({
       success: false,
       error: {
         code: "BACKEND_UNAVAILABLE",
-        message: "Python backend is required for refine but is not available"
+        message: "Generation service temporarily unavailable. Please try again or restart the service."
       }
     });
   } catch (error) {
@@ -263,105 +229,44 @@ var import_express2 = require("express");
 var import_stream = require("stream");
 var PYTHON_API_URL2 = process.env.PYTHON_API_URL || "http://127.0.0.1:8000";
 var router2 = (0, import_express2.Router)();
-var mockStyles = [
-  {
-    id: "vintage-mascot",
-    name: "Vintage Mascot",
-    description: "Thick ink lines, retro character style with bold outlines",
-    visualRules: {
-      lineWeight: "heavy",
-      looseness: "controlled",
-      complexity: "medium",
-      additionalRules: {
-        characterStyle: "cartoonish",
-        era: "1950s-1970s"
-      }
-    },
-    referenceImages: [],
-    doNotUse: []
-  },
-  {
-    id: "modern-minimal",
-    name: "Modern Minimal",
-    description: "Clean lines, geometric shapes, contemporary aesthetic",
-    visualRules: {
-      lineWeight: "thin",
-      looseness: "precise",
-      complexity: "low",
-      additionalRules: {
-        style: "geometric",
-        emphasis: "simplicity"
-      }
-    },
-    referenceImages: [],
-    doNotUse: []
-  },
-  {
-    id: "retro-badge",
-    name: "Retro Badge",
-    description: "Classic emblem style with ornate details",
-    visualRules: {
-      lineWeight: "medium",
-      looseness: "structured",
-      complexity: "high",
-      additionalRules: {
-        format: "badge/emblem",
-        ornamentation: "detailed"
-      }
-    },
-    referenceImages: [],
-    doNotUse: []
-  },
-  {
-    id: "playful-cartoon",
-    name: "Playful Cartoon",
-    description: "Fun, bouncy characters with exaggerated features",
-    visualRules: {
-      lineWeight: "varied",
-      looseness: "loose",
-      complexity: "medium",
-      additionalRules: {
-        characterStyle: "exaggerated",
-        mood: "playful"
-      }
-    },
-    referenceImages: [],
-    doNotUse: []
-  },
-  {
-    id: "technical-diagram",
-    name: "Technical Diagram",
-    description: "Precise, blueprint-style technical illustration",
-    visualRules: {
-      lineWeight: "uniform",
-      looseness: "precise",
-      complexity: "high",
-      additionalRules: {
-        style: "technical",
-        annotations: "detailed"
-      }
-    },
-    referenceImages: [],
-    doNotUse: []
-  }
-];
+var MAX_RETRIES2 = 2;
+var RETRY_DELAYS2 = [1e3, 2e3];
+function delay2(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 router2.get("/styles", async (req, res) => {
   try {
-    const pythonHealthy = await checkPythonHealth();
-    if (pythonHealthy) {
-      const response = await fetchFromPython("/styles");
-      return res.json(response);
+    for (let attempt = 0; attempt <= MAX_RETRIES2; attempt++) {
+      const pythonHealthy = await checkPythonHealth();
+      if (pythonHealthy) {
+        try {
+          const response = await fetchFromPython("/styles");
+          return res.json(response);
+        } catch (err) {
+          console.error(`[Styles] Attempt ${attempt + 1} failed:`, err);
+        }
+      } else {
+        console.warn(`[Styles] Health check failed (attempt ${attempt + 1}/${MAX_RETRIES2 + 1})`);
+      }
+      if (attempt < MAX_RETRIES2) {
+        await delay2(RETRY_DELAYS2[attempt]);
+      }
     }
-    console.log("Python backend unavailable, using mock styles");
-    res.json({
-      success: true,
-      styles: mockStyles
+    res.status(503).json({
+      success: false,
+      error: {
+        code: "BACKEND_UNAVAILABLE",
+        message: "Style service temporarily unavailable. Please try again or restart the service."
+      }
     });
   } catch (error) {
     console.error("Error fetching styles:", error);
-    res.json({
-      success: true,
-      styles: mockStyles
+    res.status(500).json({
+      success: false,
+      error: {
+        code: "STYLES_ERROR",
+        message: error instanceof Error ? error.message : "Failed to load styles"
+      }
     });
   }
 });
@@ -649,7 +554,7 @@ function createApp(options = {}) {
       status: "ok",
       pythonBackend: pythonConnected ? "connected" : "disconnected",
       version: "1.0.0",
-      mode: pythonConnected ? "production" : "mock"
+      mode: pythonConnected ? "production" : "limited"
     });
   });
   app.use("/api", generate_default);
@@ -692,7 +597,7 @@ function startApiServer(options = {}) {
     const server = app.listen(port, async () => {
       const pythonConnected = await checkPythonHealth();
       console.log(`[API] Server running on http://localhost:${port}`);
-      console.log(`[API] Python backend: ${pythonConnected ? "CONNECTED" : "DISCONNECTED (using mock)"}`);
+      console.log(`[API] Python backend: ${pythonConnected ? "CONNECTED" : "DISCONNECTED"}`);
       resolve(server);
     });
   });

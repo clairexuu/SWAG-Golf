@@ -4,6 +4,7 @@
 
 - Fixed Generation in Processing Rendering
 - Fixed Image loading issues
+- Fixed broken image display after generation 
 - Optimized Image Generation speed
 
 ## v1.0.1 - Fix Known Issues

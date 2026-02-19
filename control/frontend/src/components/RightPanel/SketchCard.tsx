@@ -1,6 +1,6 @@
-import { useState } from 'react';
 import type { Sketch } from '../../types';
-import { DownloadIcon, ExpandIcon, ErrorCircleIcon, CheckIcon } from '../shared/Icons';
+import { DownloadIcon, ExpandIcon, ErrorCircleIcon, CheckIcon, SpinnerIcon, ImagePlaceholderIcon } from '../shared/Icons';
+import { useImageLoad } from '../../hooks/useImageLoad';
 
 const API_BASE_URL = 'http://localhost:3001/api';
 const getImageUrl = (imagePath: string) => `${API_BASE_URL}${imagePath}`;
@@ -15,7 +15,8 @@ interface SketchCardProps {
 }
 
 export default function SketchCard({ sketch, onExpand, onDownload, selectionMode, isSelected, onToggleSelect }: SketchCardProps) {
-  const [imgError, setImgError] = useState(false);
+  const imageSrc = sketch.imagePath ? getImageUrl(sketch.imagePath) : null;
+  const { isLoading, hasError, imgSrc, handleLoad, handleError } = useImageLoad({ src: imageSrc });
 
   // Error state — show error message instead of image
   if (sketch.error) {
@@ -62,18 +63,32 @@ export default function SketchCard({ sketch, onExpand, onDownload, selectionMode
       )}
 
       {/* Image container */}
-      <div className="h-full">
-        {imgError ? (
-          <div className="w-full h-full flex items-center justify-center bg-surface-2">
+      <div className="h-full relative">
+        {hasError ? (
+          <div className="w-full h-full flex flex-col items-center justify-center gap-2 bg-surface-2">
             <ErrorCircleIcon className="w-8 h-8 text-swag-text-tertiary" />
+            <span className="text-[10px] text-swag-text-quaternary uppercase tracking-wider">Failed to load</span>
           </div>
+        ) : imgSrc ? (
+          <>
+            <img
+              src={imgSrc}
+              alt={sketch.id}
+              className={`w-full h-full object-cover transition-opacity duration-300 ${isLoading ? 'opacity-0' : 'opacity-100'}`}
+              onLoad={handleLoad}
+              onError={handleError}
+            />
+            {isLoading && (
+              <div className="absolute inset-0 flex items-center justify-center bg-surface-2">
+                <SpinnerIcon className="w-6 h-6 text-swag-text-quaternary" />
+              </div>
+            )}
+          </>
         ) : (
-          <img
-            src={sketch.imagePath ? getImageUrl(sketch.imagePath) : ''}
-            alt={sketch.id}
-            className="w-full h-full object-cover"
-            onError={() => setImgError(true)}
-          />
+          <div className="w-full h-full flex flex-col items-center justify-center gap-2 bg-surface-2">
+            <ImagePlaceholderIcon className="w-8 h-8 text-swag-text-quaternary" />
+            <span className="text-[10px] text-swag-text-quaternary uppercase tracking-wider">No image</span>
+          </div>
         )}
       </div>
 
