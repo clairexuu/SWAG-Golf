@@ -11,21 +11,22 @@ The image generation module uses Nano Banana as a model-agnostic image generatio
 The `generate/` module implements a flexible, model-agnostic architecture with the following components:
 
 **Core Components:**
-- **ImageGenerator** - Main orchestrator that coordinates the generation workflow
+- **ImageGenerator** - Main orchestrator that coordinates the generation workflow (sync, async, and streaming)
 - **ImageModelAdapter** - Abstract base class defining the interface for any image model
-- **NanaBananaAdapter** - Concrete implementation for Nano Banana (currently uses placeholder)
+- **NanaBananaAdapter** - Concrete implementation for Nano Banana with sync, async, and streaming generation
 - **GenerationConfig** - Configuration dataclass for generation parameters
 - **GenerationResult** - Structured output containing image paths, metadata, and configuration
 
 **File Structure:**
 ```
 generate/
-├── __init__.py           # Module exports
-├── types.py              # Data structures (Config, Result, Payload)
-├── adapter.py            # Abstract base class for model adapters
-├── nano_banana.py        # Nano Banana implementation (placeholder)
-├── generator.py          # Main orchestrator
-└── utils.py              # Helper functions (image creation, metadata)
+├── __init__.py              # Module exports
+├── types.py                 # Data structures (Config, Result, Payload)
+├── adapter.py               # Abstract base class for model adapters
+├── nano_banana.py           # Nano Banana adapter (sync, async, streaming)
+├── nano_banana_client.py    # Gemini API client (sync, async, streaming)
+├── generator.py             # Main orchestrator
+└── utils.py                 # Helper functions (image creation, metadata)
 ```
 
 ### Usage
@@ -46,7 +47,7 @@ generator = ImageGenerator()
 prompt_spec = compiler.compile("playful golf mascot", style)
 
 # Retrieve reference images
-retrieval_result = retriever.retrieve(prompt_spec, style, top_k=5)
+retrieval_result = retriever.retrieve(prompt_spec, style, top_k=3)
 
 # Generate concept sketches
 config = GenerationConfig(num_images=4, resolution=(1024, 1024))
@@ -126,7 +127,7 @@ The generation system enforces strict visual and practical constraints to ensure
 
 ### Practical Rules
 - Clean background
-- High resolution (default: 1024x1024)
+- 1K resolution by default (configurable to 2K/4K via `image_size` in GenerationConfig)
 - Easy to draw over
 - Looks like a 10-15 minute human sketch
 - Timestamped output directories prevent overwriting
@@ -134,34 +135,21 @@ The generation system enforces strict visual and practical constraints to ensure
 
 ## Model Integration
 
-### Current Status (Demo/Placeholder)
-The current implementation uses **placeholder generation** with blank grayscale canvases. This allows the full pipeline to be tested and demonstrated while the actual Nano Banana integration is completed.
+### Generation Modes
 
-### Production Integration
-To integrate the real Nano Banana model, replace the `_generate_images()` method in `generate/nano_banana.py`:
+The system supports three generation modes:
 
-```python
-def _generate_images(self, prompt, config, reference_images):
-    # Production implementation
-    response = self.client.generate(
-        prompt=prompt,
-        reference_images=reference_images,
-        num_images=config.num_images,
-        resolution=config.resolution,
-        seed=config.seed,
-        style_strength=0.8,
-        sketch_mode=True
-    )
+**Sync** — `generate()`: Uses `ThreadPoolExecutor` for parallel Gemini API calls. Used as fallback.
 
-    # Save and return image paths
-    generated_paths = []
-    for i, image_data in enumerate(response.images):
-        output_path = Path(output_dir) / f"sketch_{i}.png"
-        with open(output_path, 'wb') as f:
-            f.write(image_data)
-        generated_paths.append(str(output_path.absolute()))
+**Async** — `generate_async()`: Uses native async Gemini SDK (`client.aio.models.generate_content()`) with `asyncio.gather()` for concurrent image generation. Integrates natively with FastAPI's async event loop. Used by the `/generate` endpoint.
 
-    return generated_paths
+**Streaming** — `generate_streaming_async()`: Uses `asyncio.as_completed()` to yield `(index, image_path, error)` tuples as each Gemini call completes. Enables SSE progressive display where images appear one-by-one in the frontend. Used by the `/generate-stream` endpoint.
+
+Each mode is implemented across all layers: `NanaBananaClient` → `NanaBananaAdapter` → `ImageGenerator` → `PipelineService` → API route.
+
+### Async Dependency
+
+Async generation requires the `aiohttp` extra for the Google GenAI SDK:
+```bash
+pip install google-genai[aiohttp]
 ```
-
-The adapter pattern ensures the rest of the codebase remains unchanged when swapping from placeholder to production implementation.

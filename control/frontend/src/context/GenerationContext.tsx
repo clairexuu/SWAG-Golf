@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useRef, useCallback } from 'react';
 import axios from 'axios';
-import { generateSketches, refineSketches, confirmGeneration } from '../services/api';
+import { generateSketchesStream, refineSketches, confirmGeneration } from '../services/api';
 import type { GenerateRequest, RefineRequest, Sketch } from '../types';
 
 const STORAGE_KEY = 'swag_sketches';
@@ -70,36 +70,61 @@ export function GenerationProvider({ children }: { children: React.ReactNode }) 
     setError(null);
     setErrorCode(null);
 
+    // Initialize placeholder sketches for progressive display
+    const numImages = request.numImages || 4;
+    const placeholders: Sketch[] = Array.from({ length: numImages }, (_, i) => ({
+      id: `pending_${i}`,
+      imagePath: null,
+      resolution: [1024, 1024] as [number, number],
+      metadata: {
+        promptSpec: { intent: '', refinedIntent: '', negativeConstraints: [] },
+        referenceImages: [],
+        retrievalScores: [],
+      },
+    }));
+    setSketches(placeholders);
+
     try {
-      const response = await generateSketches(request, controller.signal);
-
-      if (response.success && response.data) {
-        setSketches(response.data.sketches);
-        saveToStorage(response.data.sketches);
-
-        // Confirm generation so it appears in archive (fire-and-forget)
-        const firstPath = response.data.sketches.find(s => s.imagePath)?.imagePath;
-        if (firstPath) {
-          const dirName = firstPath.split('/')[2];
-          confirmGeneration(dirName).catch(() => {});
-        }
-      } else {
-        setError(response.error?.message || 'Generation failed');
-        setErrorCode(response.error?.code || null);
-      }
+      await generateSketchesStream(
+        request,
+        {
+          onProgress: () => {
+            // Could show stage indicators in future
+          },
+          onImage: (index, sketch) => {
+            setSketches(prev => {
+              const next = [...prev];
+              next[index] = sketch;
+              return next;
+            });
+          },
+          onComplete: () => {
+            // Persist to storage and confirm for archive
+            setSketches(prev => {
+              saveToStorage(prev);
+              const firstPath = prev.find(s => s.imagePath)?.imagePath;
+              if (firstPath) {
+                const dirName = firstPath.split('/')[2];
+                confirmGeneration(dirName).catch(() => {});
+              }
+              return prev;
+            });
+          },
+          onError: (message) => {
+            setError(message);
+            setErrorCode('GENERATION_ERROR');
+          },
+        },
+        controller.signal
+      );
     } catch (err) {
       // Ignore abort errors — user intentionally cancelled
-      if (axios.isCancel(err) || (err instanceof DOMException && err.name === 'AbortError')) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
         return;
       }
       console.error('Generation error:', err);
-      if (axios.isAxiosError(err) && err.response?.data?.error) {
-        setError(err.response.data.error.message);
-        setErrorCode(err.response.data.error.code || null);
-      } else {
-        setError(err instanceof Error ? err.message : 'Unknown error occurred');
-        setErrorCode(null);
-      }
+      setError(err instanceof Error ? err.message : 'Unknown error occurred');
+      setErrorCode(null);
     } finally {
       // Only clear generating state if this controller wasn't replaced
       if (abortControllerRef.current === controller) {

@@ -146,7 +146,7 @@ Manages embeddings for one style with lazy loading and JSON caching.
 - `to_dict()` - convert to payload format
 
 **RetrievalConfig:**
-- `top_k` (default: 5) - number of images to retrieve
+- `top_k` (default: 3) - number of images to retrieve (reduced from 5 for faster Gemini payload)
 - `min_similarity` (default: 0.0) - threshold for filtering
 - `include_negative` (default: False) - include do_not_use images
 
@@ -185,8 +185,8 @@ prompt_spec = PromptSpec(
 # Get style
 style = style_registry.get_style("vintage-mascot")
 
-# Retrieve top-5 similar images
-result = retriever.retrieve(prompt_spec, style, top_k=5)
+# Retrieve top-3 similar images
+result = retriever.retrieve(prompt_spec, style, top_k=3)
 
 # Access results
 for img, score in zip(result.images, result.scores):

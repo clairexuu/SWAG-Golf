@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from api.services.pipeline import PipelineService
@@ -53,9 +54,9 @@ def _prune_generations(style_id: str):
 
 
 @router.post("/generate")
-def generate_sketches(request: GenerateRequest):
+async def generate_sketches(request: GenerateRequest):
     """
-    Run the full generation pipeline.
+    Run the full generation pipeline (async).
 
     Request:
         {
@@ -74,8 +75,8 @@ def generate_sketches(request: GenerateRequest):
 
         service = PipelineService()
 
-        # Run pipeline
-        result, prompt_spec, retrieval_result, style = service.generate(
+        # Run async pipeline
+        result, prompt_spec, retrieval_result, style = await service.generate_async(
             user_input=request.input,
             style_id=request.styleId,
             num_images=request.numImages or 4,
@@ -145,6 +146,49 @@ def generate_sketches(request: GenerateRequest):
                 "message": str(e)
             }
         }
+
+
+@router.post("/generate-stream")
+async def generate_sketches_stream(request: GenerateRequest):
+    """
+    SSE streaming endpoint — yields events as each image completes.
+
+    Events:
+      event: progress  — prompt compilation / RAG stages complete
+      event: image     — an individual sketch is ready
+      event: complete  — all images done
+      event: error     — something went wrong
+    """
+    if not request.input or not request.input.strip():
+        raise HTTPException(status_code=400, detail="Input cannot be empty")
+
+    service = PipelineService()
+
+    async def event_generator():
+        try:
+            async for event in service.generate_streaming(
+                user_input=request.input,
+                style_id=request.styleId,
+                num_images=request.numImages or 4,
+                session_id=request.sessionId
+            ):
+                yield f"event: {event['event']}\ndata: {json.dumps(event['data'])}\n\n"
+
+            # Prune after completion
+            _prune_generations(request.styleId)
+
+        except Exception as e:
+            yield f"event: error\ndata: {json.dumps({'message': str(e)})}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
 
 
 class RefineRequest(BaseModel):

@@ -111,23 +111,22 @@ router.post("/generate", async (req, res) => {
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       if (abortController.signal.aborted)
         return;
-      const pythonHealthy = await checkPythonHealth();
-      if (pythonHealthy) {
-        try {
-          const response = await fetchFromPython("/generate", {
-            method: "POST",
-            body: JSON.stringify({ input, styleId, numImages: numImages || 4, experimentalMode, sessionId })
-          }, abortController.signal);
-          return res.json(response);
-        } catch (pythonError) {
-          if (pythonError.name === "AbortError") {
-            console.log("Generation cancelled by client");
-            return;
-          }
-          console.error(`[Generate] Attempt ${attempt + 1} failed:`, pythonError);
+      try {
+        const response = await fetchFromPython("/generate", {
+          method: "POST",
+          body: JSON.stringify({ input, styleId, numImages: numImages || 4, experimentalMode, sessionId })
+        }, abortController.signal);
+        return res.json(response);
+      } catch (pythonError) {
+        if (pythonError.name === "AbortError") {
+          console.log("Generation cancelled by client");
+          return;
         }
-      } else {
-        console.warn(`[Generate] Health check failed (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
+        console.error(`[Generate] Attempt ${attempt + 1} failed:`, pythonError);
+        const pythonHealthy = await checkPythonHealth();
+        if (!pythonHealthy) {
+          console.warn(`[Generate] Python backend is unreachable`);
+        }
       }
       if (attempt < MAX_RETRIES) {
         console.log(`[Generate] Retrying in ${RETRY_DELAYS[attempt]}ms...`);
@@ -156,6 +155,72 @@ router.post("/generate", async (req, res) => {
     });
   }
 });
+router.post("/generate-stream", async (req, res) => {
+  const abortController = new AbortController();
+  res.on("close", () => abortController.abort());
+  try {
+    const { input, styleId } = req.body;
+    if (!input || !styleId) {
+      return res.status(400).json({
+        success: false,
+        error: { code: "INVALID_REQUEST", message: "Missing required fields: input and styleId are required" }
+      });
+    }
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+      "X-Accel-Buffering": "no"
+    });
+    const pythonRes = await fetch(`${PYTHON_API_URL}/generate-stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req.body),
+      signal: abortController.signal
+    });
+    if (!pythonRes.ok || !pythonRes.body) {
+      res.write(`event: error
+data: ${JSON.stringify({ message: "Backend unavailable" })}
+
+`);
+      res.end();
+      return;
+    }
+    const reader = pythonRes.body.getReader();
+    const decoder = new TextDecoder();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done)
+          break;
+        res.write(decoder.decode(value, { stream: true }));
+      }
+    } catch (err) {
+      if (err.name !== "AbortError") {
+        res.write(`event: error
+data: ${JSON.stringify({ message: "Stream interrupted" })}
+
+`);
+      }
+    }
+    res.end();
+  } catch (err) {
+    if (err.name === "AbortError")
+      return;
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        error: { code: "STREAM_ERROR", message: err instanceof Error ? err.message : "Unknown error" }
+      });
+    } else {
+      res.write(`event: error
+data: ${JSON.stringify({ message: "Backend unavailable" })}
+
+`);
+      res.end();
+    }
+  }
+});
 router.post("/refine", async (req, res) => {
   const abortController = new AbortController();
   res.on("close", () => {
@@ -177,23 +242,22 @@ router.post("/refine", async (req, res) => {
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       if (abortController.signal.aborted)
         return;
-      const pythonHealthy = await checkPythonHealth();
-      if (pythonHealthy) {
-        try {
-          const response = await fetchFromPython("/refine", {
-            method: "POST",
-            body: JSON.stringify({ refinePrompt, selectedImagePaths, styleId, sessionId })
-          }, abortController.signal);
-          return res.json(response);
-        } catch (pythonError) {
-          if (pythonError.name === "AbortError") {
-            console.log("Refine cancelled by client");
-            return;
-          }
-          console.error(`[Refine] Attempt ${attempt + 1} failed:`, pythonError);
+      try {
+        const response = await fetchFromPython("/refine", {
+          method: "POST",
+          body: JSON.stringify({ refinePrompt, selectedImagePaths, styleId, sessionId })
+        }, abortController.signal);
+        return res.json(response);
+      } catch (pythonError) {
+        if (pythonError.name === "AbortError") {
+          console.log("Refine cancelled by client");
+          return;
         }
-      } else {
-        console.warn(`[Refine] Health check failed (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
+        console.error(`[Refine] Attempt ${attempt + 1} failed:`, pythonError);
+        const pythonHealthy = await checkPythonHealth();
+        if (!pythonHealthy) {
+          console.warn(`[Refine] Python backend is unreachable`);
+        }
       }
       if (attempt < MAX_RETRIES) {
         console.log(`[Refine] Retrying in ${RETRY_DELAYS[attempt]}ms...`);

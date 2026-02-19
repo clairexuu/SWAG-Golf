@@ -1,6 +1,6 @@
 // HTTP client for communicating with Python FastAPI backend
 
-const PYTHON_API_URL = process.env.PYTHON_API_URL || 'http://127.0.0.1:8000';
+export const PYTHON_API_URL = process.env.PYTHON_API_URL || 'http://127.0.0.1:8000';
 
 /**
  * Fetch data from Python backend.

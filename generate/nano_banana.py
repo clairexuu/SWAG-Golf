@@ -1,6 +1,7 @@
 # generate/nano_banana.py
+import asyncio
 import os
-from typing import List, Optional, Tuple
+from typing import AsyncGenerator, List, Optional, Tuple
 from pathlib import Path
 from dotenv import load_dotenv
 from .adapter import ImageModelAdapter
@@ -227,3 +228,116 @@ class NanaBananaAdapter(ImageModelAdapter):
               (f", {fail_count} failed" if fail_count else ""))
 
         return generated_paths, image_errors
+
+    # ── Async methods ──────────────────────────────────────────────────
+
+    async def generate_async(self, payload: GenerationPayload) -> Tuple[List[Optional[str]], List[Optional[str]]]:
+        """Async version of generate(). Returns (image_paths, image_errors)."""
+        self.validate_config(payload.config)
+        prompt = self.format_prompt(payload.prompt_spec, payload.style)
+        return await self._generate_images_async(
+            prompt=prompt,
+            config=payload.config,
+            reference_images=payload.retrieval_result.to_dict()["images"]
+        )
+
+    async def _generate_images_async(
+        self,
+        prompt: str,
+        config: GenerationConfig,
+        reference_images: List[str]
+    ) -> Tuple[List[Optional[str]], List[Optional[str]]]:
+        """Async version of _generate_images()."""
+        if self.client is None:
+            raise RuntimeError("Image generation client not initialized. Set GOOGLE_API_KEY in your environment.")
+
+        timestamp = get_timestamp()
+        output_dir = create_output_directory(config.output_dir, timestamp)
+
+        print(f"Calling Nano Banana API (async)...")
+        print(f"  Prompt: {prompt[:80]}...")
+        print(f"  References: {len(reference_images)}")
+
+        image_data_list, image_errors = await self.client.generate_async(
+            prompt=prompt,
+            reference_images=reference_images,
+            num_images=config.num_images,
+            resolution=config.resolution,
+            aspect_ratio=config.aspect_ratio,
+            image_size=config.image_size,
+            seed=config.seed
+        )
+
+        # Save images (CPU-bound, use thread pool)
+        generated_paths = await self._save_images_async(image_data_list, output_dir, config)
+
+        success_count = sum(1 for p in generated_paths if p is not None)
+        fail_count = sum(1 for e in image_errors if e is not None)
+        grayscale_msg = " (converted to grayscale)" if config.enforce_grayscale else ""
+        print(f"[OK] Generated {success_count}/{len(image_data_list)} images{grayscale_msg}" +
+              (f", {fail_count} failed" if fail_count else ""))
+
+        return generated_paths, image_errors
+
+    async def generate_streaming_async(
+        self,
+        payload: GenerationPayload
+    ) -> AsyncGenerator[Tuple[int, Optional[str], Optional[str]], None]:
+        """Streaming async generator that yields (index, image_path, error) as each image completes."""
+        self.validate_config(payload.config)
+        prompt = self.format_prompt(payload.prompt_spec, payload.style)
+        config = payload.config
+
+        if self.client is None:
+            raise RuntimeError("Image generation client not initialized. Set GOOGLE_API_KEY in your environment.")
+
+        timestamp = get_timestamp()
+        output_dir = create_output_directory(config.output_dir, timestamp)
+        reference_images = payload.retrieval_result.to_dict()["images"]
+
+        print(f"Calling Nano Banana API (async streaming)...")
+
+        async for idx, img_bytes, error in self.client.generate_streaming_async(
+            prompt=prompt,
+            reference_images=reference_images,
+            num_images=config.num_images,
+            resolution=config.resolution,
+            aspect_ratio=config.aspect_ratio,
+            image_size=config.image_size,
+            seed=config.seed
+        ):
+            if img_bytes is not None:
+                # Save this image (CPU-bound grayscale + disk write)
+                path = await asyncio.to_thread(
+                    self._process_and_save_single, idx, img_bytes, output_dir, config
+                )
+                yield (idx, path, None)
+            else:
+                yield (idx, None, error)
+
+    def _process_and_save_single(self, index: int, data: bytes, output_dir: str, config: GenerationConfig) -> str:
+        """Process and save a single image. Thread-safe, used by async methods."""
+        if config.enforce_grayscale:
+            data = convert_to_grayscale(data)
+        out = Path(output_dir) / f"sketch_{index}.png"
+        with open(out, 'wb') as f:
+            f.write(data)
+        return str(out.absolute())
+
+    async def _save_images_async(
+        self,
+        image_data_list: List[Optional[bytes]],
+        output_dir: str,
+        config: GenerationConfig
+    ) -> List[Optional[str]]:
+        """Save images using asyncio.to_thread for CPU-bound work."""
+        generated_paths: List[Optional[str]] = [None] * len(image_data_list)
+        tasks = []
+        for i, data in enumerate(image_data_list):
+            if data is not None:
+                tasks.append((i, asyncio.to_thread(self._process_and_save_single, i, data, output_dir, config)))
+
+        for i, task in tasks:
+            generated_paths[i] = await task
+
+        return generated_paths

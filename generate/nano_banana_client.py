@@ -2,11 +2,12 @@
 Google Gemini API Client - handles image generation using gemini-2.5-flash-image model.
 Renamed from nano_banana_client.py but kept the class name for backwards compatibility.
 """
+import asyncio
 import os
 import time
 import base64
 from io import BytesIO
-from typing import List, Optional, Tuple
+from typing import AsyncGenerator, List, Optional, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from google import genai
 from google.genai import types
@@ -98,7 +99,7 @@ class NanaBananaClient:
         """
         # Filter to valid reference image paths (limit to 5)
         valid_ref_paths = []
-        for img_path in reference_images[:5]:
+        for img_path in reference_images[:3]:
             try:
                 Image.open(img_path).verify()
                 valid_ref_paths.append(img_path)
@@ -130,7 +131,7 @@ IMPORTANT OUTPUT REQUIREMENTS:
             futures = {
                 executor.submit(
                     self._generate_single_image,
-                    enhanced_prompt, ref_image_bytes, aspect_ratio, temperature, i
+                    enhanced_prompt, ref_image_bytes, aspect_ratio, image_size, temperature, i
                 ): i
                 for i in range(num_images)
             }
@@ -151,6 +152,7 @@ IMPORTANT OUTPUT REQUIREMENTS:
         enhanced_prompt: str,
         ref_image_bytes: List[bytes],
         aspect_ratio: str,
+        image_size: str,
         temperature: float,
         index: int
     ) -> bytes:
@@ -164,6 +166,7 @@ IMPORTANT OUTPUT REQUIREMENTS:
             enhanced_prompt: The formatted prompt string
             ref_image_bytes: List of reference image data as bytes (pre-loaded)
             aspect_ratio: Gemini aspect ratio preset
+            image_size: Gemini image size preset ("1K", "2K", "4K")
             temperature: Generation temperature
             index: Image index (0-based, used for logging)
 
@@ -188,7 +191,8 @@ IMPORTANT OUTPUT REQUIREMENTS:
                         responseModalities=["IMAGE", "TEXT"],
                         temperature=temperature,
                         imageConfig=types.ImageConfig(
-                            aspectRatio=aspect_ratio
+                            aspectRatio=aspect_ratio,
+                            imageSize=image_size
                         )
                     )
                 )
@@ -354,7 +358,8 @@ Output a single modified sketch. GRAYSCALE ONLY — no color.
                         responseModalities=["IMAGE", "TEXT"],
                         temperature=temperature,
                         imageConfig=types.ImageConfig(
-                            aspectRatio=aspect_ratio
+                            aspectRatio=aspect_ratio,
+                            imageSize="1K"
                         )
                     )
                 )
@@ -401,3 +406,188 @@ Output a single modified sketch. GRAYSCALE ONLY — no color.
                     raise RuntimeError(f"API quota exceeded for refine {index+1}. Check quota at https://ai.dev/rate-limit")
                 else:
                     raise RuntimeError(f"Failed to refine image {index+1}: {e}")
+
+    # ── Async methods ──────────────────────────────────────────────────
+
+    @staticmethod
+    def _extract_image_bytes(response) -> bytes:
+        """Extract image bytes from a Gemini response. Shared by sync and async paths."""
+        if response.candidates and len(response.candidates) > 0:
+            candidate = response.candidates[0]
+            if hasattr(candidate, 'content') and candidate.content.parts:
+                for part in candidate.content.parts:
+                    if hasattr(part, 'inline_data') and part.inline_data:
+                        img_data = part.inline_data.data
+                        if isinstance(img_data, str):
+                            img_bytes = base64.b64decode(img_data)
+                        else:
+                            img_bytes = img_data
+                        if img_bytes and isinstance(img_bytes, bytes):
+                            if img_bytes.startswith(b'\x89PNG') or img_bytes.startswith(b'\xff\xd8\xff'):
+                                return img_bytes
+                raise RuntimeError("Gemini returned no image data")
+            else:
+                raise RuntimeError("Gemini returned no content")
+        else:
+            raise RuntimeError("Gemini returned no candidates - may have been blocked by safety filters")
+
+    async def _generate_single_image_async(
+        self,
+        enhanced_prompt: str,
+        ref_image_bytes: List[bytes],
+        aspect_ratio: str,
+        image_size: str,
+        temperature: float,
+        index: int
+    ) -> Tuple[int, bytes]:
+        """Generate a single image via the async Gemini API. Returns (index, image_bytes)."""
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                ref_parts = [Image.open(BytesIO(b)) for b in ref_image_bytes]
+                contents = [enhanced_prompt] + ref_parts
+
+                response = await self.client.aio.models.generate_content(
+                    model=self.model_name,
+                    contents=contents,
+                    config=types.GenerateContentConfig(
+                        systemInstruction=SYSTEM_PROMPT,
+                        responseModalities=["IMAGE", "TEXT"],
+                        temperature=temperature,
+                        imageConfig=types.ImageConfig(
+                            aspectRatio=aspect_ratio,
+                            imageSize=image_size
+                        )
+                    )
+                )
+                return index, self._extract_image_bytes(response)
+
+            except RuntimeError:
+                raise
+
+            except Exception as e:
+                error_msg = str(e)
+                is_retryable = '503' in error_msg or '429' in error_msg or 'unavailable' in error_msg.lower()
+                if is_retryable and attempt < max_retries - 1:
+                    wait = 2 ** attempt
+                    print(f"Warning: Image {index+1} got transient error (attempt {attempt+1}/{max_retries}), retrying in {wait}s...")
+                    await asyncio.sleep(wait)
+                    continue
+                if '429' in error_msg or 'quota' in error_msg.lower():
+                    raise RuntimeError(f"API quota exceeded for image {index+1}. Check quota at https://ai.dev/rate-limit")
+                else:
+                    raise RuntimeError(f"Failed to generate image {index+1}: {e}")
+
+    async def generate_async(
+        self,
+        prompt: str,
+        reference_images: List[str],
+        num_images: int = 4,
+        resolution: tuple = (1050, 1875),
+        aspect_ratio: str = "9:16",
+        image_size: str = "1K",
+        seed: Optional[int] = None,
+        temperature: float = 0.8
+    ) -> Tuple[List[Optional[bytes]], List[Optional[str]]]:
+        """Async version of generate() using asyncio.gather()."""
+        valid_ref_paths = []
+        for img_path in reference_images[:3]:
+            try:
+                Image.open(img_path).verify()
+                valid_ref_paths.append(img_path)
+            except Exception as e:
+                print(f"Warning: Failed to load reference image {img_path}: {e}")
+
+        enhanced_prompt = f"""
+{prompt}
+
+IMPORTANT OUTPUT REQUIREMENTS:
+- Generate exactly 1 single design image (not multiple designs in one image)
+- Match the layout, style, and technique shown in the reference images below
+- Do NOT include any text, words, letters, or numbers in the generated image
+- OUTPUT MUST BE BLACK AND WHITE / GRAYSCALE ONLY - NO COLOR
+"""
+
+        ref_image_bytes = []
+        for p in valid_ref_paths:
+            with open(p, 'rb') as f:
+                ref_image_bytes.append(f.read())
+
+        print(f"Generating {num_images} images in parallel (async)...")
+        tasks = [
+            self._generate_single_image_async(
+                enhanced_prompt, ref_image_bytes, aspect_ratio, image_size, temperature, i
+            )
+            for i in range(num_images)
+        ]
+        settled = await asyncio.gather(*tasks, return_exceptions=True)
+
+        results: List[Optional[bytes]] = [None] * num_images
+        errors: List[Optional[str]] = [None] * num_images
+        for item in settled:
+            if isinstance(item, Exception):
+                # Find the index from the error message or use a fallback
+                err_str = str(item)
+                errors[0] = err_str  # fallback
+                print(f"Image generation failed: {item}")
+            else:
+                idx, img_bytes = item
+                results[idx] = img_bytes
+
+        return results, errors
+
+    async def generate_streaming_async(
+        self,
+        prompt: str,
+        reference_images: List[str],
+        num_images: int = 4,
+        resolution: tuple = (1050, 1875),
+        aspect_ratio: str = "9:16",
+        image_size: str = "1K",
+        seed: Optional[int] = None,
+        temperature: float = 0.8
+    ) -> AsyncGenerator[Tuple[int, Optional[bytes], Optional[str]], None]:
+        """Async streaming generator that yields (index, image_bytes, error) as each image completes."""
+        valid_ref_paths = []
+        for img_path in reference_images[:3]:
+            try:
+                Image.open(img_path).verify()
+                valid_ref_paths.append(img_path)
+            except Exception as e:
+                print(f"Warning: Failed to load reference image {img_path}: {e}")
+
+        enhanced_prompt = f"""
+{prompt}
+
+IMPORTANT OUTPUT REQUIREMENTS:
+- Generate exactly 1 single design image (not multiple designs in one image)
+- Match the layout, style, and technique shown in the reference images below
+- Do NOT include any text, words, letters, or numbers in the generated image
+- OUTPUT MUST BE BLACK AND WHITE / GRAYSCALE ONLY - NO COLOR
+"""
+
+        ref_image_bytes = []
+        for p in valid_ref_paths:
+            with open(p, 'rb') as f:
+                ref_image_bytes.append(f.read())
+
+        print(f"Generating {num_images} images in parallel (async streaming)...")
+
+        # Wrap each task to always return (index, result_or_exception)
+        async def _tracked_generate(i: int):
+            try:
+                return await self._generate_single_image_async(
+                    enhanced_prompt, ref_image_bytes, aspect_ratio, image_size, temperature, i
+                )
+            except Exception as e:
+                return (i, e)
+
+        tasks = [asyncio.create_task(_tracked_generate(i)) for i in range(num_images)]
+
+        for coro in asyncio.as_completed(tasks):
+            idx, result = await coro
+            if isinstance(result, Exception):
+                print(f"Image {idx+1} failed: {result}")
+                yield (idx, None, str(result))
+            else:
+                yield (idx, result, None)

@@ -17,7 +17,7 @@ python-dotenv
 
 # LLM APIs
 openai
-google-genai
+google-genai[aiohttp]
 
 # Image processing
 Pillow

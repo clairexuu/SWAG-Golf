@@ -1,5 +1,5 @@
 # generate/generator.py
-from typing import List, Optional
+from typing import AsyncGenerator, List, Optional, Tuple
 from .adapter import ImageModelAdapter
 from .nano_banana import NanaBananaAdapter
 from .types import GenerationConfig, GenerationResult, GenerationPayload
@@ -117,6 +117,89 @@ class ImageGenerator:
             result.metadata_path = metadata_path
 
         return result
+
+    async def generate_async(
+        self,
+        prompt_spec: PromptSpec,
+        retrieval_result: RetrievalResult,
+        style,
+        config: Optional[GenerationConfig] = None
+    ) -> GenerationResult:
+        """Async version of generate()."""
+        if config is None:
+            config = GenerationConfig()
+
+        payload = GenerationPayload(
+            prompt_spec=prompt_spec,
+            retrieval_result=retrieval_result,
+            config=config,
+            style=style
+        )
+
+        image_paths, image_errors = await self.adapter.generate_async(payload)
+
+        timestamp = get_timestamp()
+        reference_images = retrieval_result.to_dict()["images"]
+
+        result = GenerationResult(
+            images=image_paths,
+            image_errors=image_errors,
+            metadata_path="",
+            timestamp=timestamp,
+            prompt_spec=prompt_spec,
+            reference_images=reference_images,
+            config=config
+        )
+
+        successful_paths = [p for p in image_paths if p is not None]
+        if successful_paths:
+            import os
+            output_dir = os.path.dirname(successful_paths[0])
+            metadata_dict = {
+                "timestamp": timestamp,
+                "archived": False,
+                "user_prompt": prompt_spec.intent,
+                "gpt_compiled_prompt": prompt_spec.refined_intent,
+                "style": {"id": style.id, "name": style.name},
+                "prompt_spec": prompt_spec.to_dict(),
+                "reference_images": reference_images,
+                "retrieval_scores": retrieval_result.scores,
+                "config": {
+                    "num_images": config.num_images,
+                    "resolution": list(config.resolution),
+                    "model_name": config.model_name,
+                    "seed": config.seed,
+                    "aspect_ratio": config.aspect_ratio,
+                    "image_size": config.image_size
+                },
+                "images": [os.path.basename(p) for p in successful_paths],
+                "image_errors": [e for e in image_errors if e is not None]
+            }
+            metadata_path = save_metadata(metadata_dict, output_dir)
+            result.metadata_path = metadata_path
+
+        return result
+
+    async def generate_streaming_async(
+        self,
+        prompt_spec: PromptSpec,
+        retrieval_result: RetrievalResult,
+        style,
+        config: Optional[GenerationConfig] = None
+    ) -> AsyncGenerator[Tuple[int, Optional[str], Optional[str]], None]:
+        """Async streaming generator that yields (index, image_path, error) as each image completes."""
+        if config is None:
+            config = GenerationConfig()
+
+        payload = GenerationPayload(
+            prompt_spec=prompt_spec,
+            retrieval_result=retrieval_result,
+            config=config,
+            style=style
+        )
+
+        async for idx, path, error in self.adapter.generate_streaming_async(payload):
+            yield (idx, path, error)
 
     def refine(
         self,

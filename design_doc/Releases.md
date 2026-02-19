@@ -1,11 +1,17 @@
 # Release History
 
-## v1.0.2 - Fix Known Issues
+## v1.0.2 - Fix Known Issues + Generation Speed Optimization
 
 - Fixed Generation in Processing Rendering
 - Fixed Image loading issues
-- Fixed broken image display after generation 
-- Optimized Image Generation speed
+- Fixed broken image display after generation
+- Optimized Image Generation speed:
+  - Switched prompt compilation model from GPT-4o to GPT-4o-mini
+  - Removed redundant health check
+  - Reduced RAG reference images from top-5 to top-3
+  - Converted Gemini API calls from ThreadPoolExecutor to native async (`asyncio.gather`) 
+  - Lowered default image resolution from 2K to 1K preview mode (~30-50% faster)
+  - Added SSE streaming with progressive display (time to first image reduced from ~20-35s to ~8-14s)
 
 ## v1.0.1 - Fix Known Issues
 

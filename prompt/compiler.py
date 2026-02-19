@@ -29,7 +29,7 @@ class PromptCompiler:
 
         # Resolve model from environment or use default
         if model is None:
-            model = os.getenv('GPT_MODEL', 'gpt-4')
+            model = os.getenv('GPT_MODEL', 'gpt-4o-mini')
 
         self.system_prompt = system_prompt
         self.model = model

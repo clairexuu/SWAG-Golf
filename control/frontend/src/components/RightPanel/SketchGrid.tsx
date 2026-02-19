@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import JSZip from 'jszip';
 import type { Sketch } from '../../types';
 import SketchCard from './SketchCard';
@@ -25,6 +26,16 @@ interface SketchGridProps {
 }
 
 export default function SketchGrid({ sketches, isGenerating, isRestarting, refiningIndices, error, errorCode, onImageClick, onCancel, onRetry, onRestart, selectionMode, selectedIndices, onToggleSelect }: SketchGridProps) {
+  const isActive = isGenerating || (refiningIndices != null && refiningIndices.size > 0);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  useEffect(() => {
+    if (!isActive) return;
+    setElapsedSeconds(0);
+    const interval = setInterval(() => setElapsedSeconds(s => s + 1), 1000);
+    return () => clearInterval(interval);
+  }, [isActive]);
+
   const handleDownload = async (sketch: Sketch) => {
     if (!sketch.imagePath) return;
     const imageUrl = getImageUrl(sketch.imagePath);
@@ -115,8 +126,8 @@ export default function SketchGrid({ sketches, isGenerating, isRestarting, refin
     );
   }
 
-  // Loading state: full skeleton grid only for fresh generate (not refine)
-  if (isGenerating && (!refiningIndices || refiningIndices.size === 0)) {
+  // Loading state: full skeleton grid only when no sketches exist at all
+  if (isGenerating && sketches.length === 0 && (!refiningIndices || refiningIndices.size === 0)) {
     return (
       <div className="flex-1 flex flex-col overflow-hidden p-4">
         <div className="flex-1 grid grid-cols-4 gap-4 justify-items-center">
@@ -127,7 +138,7 @@ export default function SketchGrid({ sketches, isGenerating, isRestarting, refin
         </div>
         <div className="text-center py-4">
           <p className="text-swag-white font-medium animate-pulse">Generating your concept sketches...</p>
-          <p className="text-xs text-swag-text-tertiary mt-1">This may take a few moments</p>
+          <p className="text-xs text-swag-text-tertiary mt-1">{elapsedSeconds}s elapsed</p>
           <button
             onClick={onCancel}
             className="px-4 py-1.5 text-xs uppercase tracking-wider mt-2 rounded bg-red-600 hover:bg-red-700 text-white font-medium transition-colors"
@@ -157,7 +168,7 @@ export default function SketchGrid({ sketches, isGenerating, isRestarting, refin
 
   // Gallery view
   return (
-    <div className="flex-1 flex flex-col overflow-hidden p-4">
+    <div className="flex-1 flex flex-col overflow-hidden p-4 relative">
       {/* Gallery header */}
       <div className="flex items-center justify-between mb-4 flex-shrink-0">
         <div className="flex items-center gap-3">
@@ -181,9 +192,12 @@ export default function SketchGrid({ sketches, isGenerating, isRestarting, refin
       </div>
 
       {/* Grid */}
-      <div className="flex-1 grid grid-cols-4 gap-4 overflow-hidden justify-items-center">
+      <div className="flex-1 grid grid-cols-4 gap-4 justify-items-center">
         {sketches.map((sketch, index) =>
           refiningIndices?.has(index) ? (
+            <SkeletonSketchCard key={sketch.id} />
+          ) : sketch.imagePath === null && !sketch.error && isGenerating ? (
+            // Pending slot during SSE streaming — show skeleton
             <SkeletonSketchCard key={sketch.id} />
           ) : (
             <SketchCard
@@ -198,9 +212,23 @@ export default function SketchGrid({ sketches, isGenerating, isRestarting, refin
           )
         )}
       </div>
+      {/* Generating status during SSE streaming */}
+      {isGenerating && (!refiningIndices || refiningIndices.size === 0) && (
+        <div className="absolute bottom-0 left-0 right-0 text-center py-3 bg-gradient-to-t from-black/80 to-transparent">
+          <p className="text-swag-white text-sm font-medium animate-pulse">
+            Generating sketches... ({sketches.filter(s => s.imagePath).length}/{sketches.length}) — {elapsedSeconds}s elapsed
+          </p>
+          <button
+            onClick={onCancel}
+            className="px-4 py-1.5 text-xs uppercase tracking-wider mt-2 rounded bg-red-600 hover:bg-red-700 text-white font-medium transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
       {refiningIndices && refiningIndices.size > 0 && (
-        <div className="text-center py-3">
-          <p className="text-swag-white text-sm font-medium animate-pulse">Refining {refiningIndices.size} sketch{refiningIndices.size > 1 ? 'es' : ''}...</p>
+        <div className="absolute bottom-0 left-0 right-0 text-center py-3 bg-gradient-to-t from-black/80 to-transparent">
+          <p className="text-swag-white text-sm font-medium animate-pulse">Refining {refiningIndices.size} sketch{refiningIndices.size > 1 ? 'es' : ''}... — {elapsedSeconds}s elapsed</p>
           <button
             onClick={onCancel}
             className="px-4 py-1.5 text-xs uppercase tracking-wider mt-2 rounded bg-red-600 hover:bg-red-700 text-white font-medium transition-colors"

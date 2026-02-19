@@ -32,12 +32,12 @@ GPT-powered compiler that interprets natural language and style context.
 PromptCompiler(
     system_prompt: Optional[str] = None,  # Auto-loads from system_prompt.txt
     api_key: Optional[str] = None,        # Uses OPENAI_API_KEY env var
-    model: Optional[str] = None           # Uses GPT_MODEL env var (default: gpt-4)
+    model: Optional[str] = None           # Uses GPT_MODEL env var (default: gpt-4o-mini)
 )
 ```
 
 **Configuration:**
-- Set `GPT_MODEL` in `.env` (e.g., `gpt-4o`)
+- Set `GPT_MODEL` in `.env` to override (default: `gpt-4o-mini`)
 - Modify `TEMPERATURE` in [prompt/compiler.py](prompt/compiler.py:10) (default: 0.7)
 
 **Method:**

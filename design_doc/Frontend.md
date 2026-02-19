@@ -38,7 +38,8 @@ Header navigation (`Header.tsx`) with NavLink active-state highlighting across a
 | `/api/styles/:id` | DELETE | Delete style and all reference images |
 | `/api/styles/:id/images` | POST | Add reference images to style |
 | `/api/styles/:id/images` | DELETE | Remove specific reference images |
-| `/api/generate` | POST | Generate sketches (runs full pipeline) |
+| `/api/generate` | POST | Generate sketches (runs full pipeline, returns all at once) |
+| `/api/generate-stream` | POST | Generate sketches via SSE streaming (images arrive one-by-one) |
 | `/api/feedback` | POST | Submit user feedback for a session |
 | `/api/feedback/summarize` | POST | Summarize accumulated feedback |
 | `/api/generations` | GET | Fetch generation history (optional `?styleId` filter) |
@@ -47,7 +48,7 @@ Header navigation (`Header.tsx`) with NavLink active-state highlighting across a
 
 ## Data Flow
 
-**Generation:** User selects style → enters concept in PromptComposer → Frontend → Express → Python FastAPI → Pipeline (Style → Prompt Compilation → RAG Retrieval → Image Generation) → images saved to `generated_outputs/` → displayed in SketchGrid.
+**Generation (SSE streaming):** User selects style → enters concept in PromptComposer → Frontend calls `/api/generate-stream` via Fetch API → Express pipes SSE stream from Python FastAPI → Pipeline runs async (Style → Prompt Compilation → RAG Retrieval → Concurrent Gemini Generation) → images stream back one-by-one as SSE events → `GenerationContext` updates individual sketch slots progressively → SketchGrid shows each image as it arrives with skeleton placeholders for pending slots.
 
 **Feedback:** User enters feedback in PromptComposer (Feedback mode) → submitted with sessionId → accumulated per session → summarized on page unload via `navigator.sendBeacon()`.
 
@@ -61,7 +62,7 @@ Three-panel layout for sketch generation.
 
 - **Left — Sidebar + StyleSelector**: Collapsible sidebar listing all styles. Selecting a style starts a new session (UUID). Toggle with Cmd+B.
 - **Center — PromptComposer**: Textarea with two modes — *Concept* (new generation) and *Feedback* (refine results). Cmd+Enter to submit.
-- **Right — SketchGrid + Lightbox**: Displays generated sketches in a grid. Each SketchCard shows resolution badge and hover actions (download, expand). Lightbox for full-screen viewing with arrow-key navigation. "Download All" creates a ZIP.
+- **Right — SketchGrid + Lightbox**: Displays generated sketches in a grid with progressive SSE streaming (skeleton placeholders for pending images, real SketchCards as each arrives). Shows "Generating sketches... (2/4)" progress during streaming. Each SketchCard shows resolution badge and hover actions (download, expand). Lightbox for full-screen viewing with arrow-key navigation. "Download All" creates a ZIP.
 
 ### Styles Page (`/styles`)
 
@@ -93,6 +94,8 @@ Two-panel layout for generation history.
 ### Global State
 
 **StyleContext** provides `styles[]`, `selectedStyleId`, `selectStyle()`, `refreshStyles()`, and `clearSelection()` across all pages.
+
+**GenerationContext** manages generation state: `isGenerating`, `sketches`, `error`, `refiningIndices`. The `generate()` callback uses SSE streaming via `generateSketchesStream()` — initializes placeholder sketches immediately, then updates individual slots as each image arrives from the server. The `refine()` callback uses the standard `/refine` endpoint with in-place sketch replacement.
 
 ## Prerequisites
 
@@ -135,8 +138,8 @@ control/
 │       ├── pages/          # StudioPage, StyleLibraryPage, ArchivePage
 │       ├── components/     # Layout, CenterPanel, LeftPanel, RightPanel, HistoryPage, shared
 │       ├── hooks/          # useGenerate, useHistory
-│       ├── context/        # StyleContext
-│       └── services/       # api.ts (Axios client)
+│       ├── context/        # StyleContext, GenerationContext
+│       └── services/       # api.ts (Axios client + SSE streaming)
 └── electron/               # Desktop wrapper
 
 api/                        # Python FastAPI server
@@ -149,6 +152,8 @@ api/                        # Python FastAPI server
 
 - Three-page responsive layout with header navigation
 - Full CRUD style management with reference image upload/delete
-- Sketch generation with session-based feedback loop
+- Sketch generation with SSE streaming and progressive display
+- Sketch refinement with in-place replacement
+- Session-based feedback loop
 - Generation history archive with style filtering
 - Python backend integration (with mock fallback)

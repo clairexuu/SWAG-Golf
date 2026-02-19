@@ -1,10 +1,11 @@
 """Pipeline service that orchestrates the generation workflow."""
 
+import asyncio
 import json
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
 from dotenv import load_dotenv
 
 from style.registry import StyleRegistry
@@ -51,7 +52,7 @@ class PipelineService:
         self.style_registry = StyleRegistry()
 
         # Initialize prompt compiler
-        gpt_model = os.getenv("GPT_MODEL", "gpt-4o")
+        gpt_model = os.getenv("GPT_MODEL", "gpt-4o-mini")
         self.compiler = PromptCompiler(model=gpt_model)
 
         # Initialize RAG components
@@ -254,7 +255,7 @@ class PipelineService:
         )
 
         # Step 4: Retrieve reference images
-        retrieval_result = self.retriever.retrieve(prompt_spec, style, top_k=5)
+        retrieval_result = self.retriever.retrieve(prompt_spec, style, top_k=3)
 
         # Step 5: Generate images
         config = GenerationConfig(
@@ -286,6 +287,229 @@ class PipelineService:
             self.conversation_logger.log_turn(session_id, style_id, turn.to_dict())
 
         return result, prompt_spec, retrieval_result, style
+
+    async def generate_async(
+        self,
+        user_input: str,
+        style_id: str,
+        num_images: int = 4,
+        session_id: Optional[str] = None
+    ) -> Tuple[GenerationResult, PromptSpec, RetrievalResult, Style]:
+        """Async version of generate(). Uses async Gemini calls for image generation."""
+        self._initialize()
+
+        style = self.style_registry.get_style(style_id)
+
+        conversation_history = None
+        context = None
+        if session_id:
+            context = self.session_store.get_or_create(session_id, style_id)
+            if context.turn_count > 0:
+                conversation_history = context.to_gpt_messages(exclude_roles=["refine"])
+
+        # Prompt compilation (sync — runs in thread to avoid blocking event loop)
+        prompt_spec = await asyncio.to_thread(
+            self.compiler.compile,
+            user_input, style,
+            conversation_history
+        )
+
+        # RAG retrieval (sync — runs in thread)
+        retrieval_result = await asyncio.to_thread(
+            self.retriever.retrieve, prompt_spec, style, 3
+        )
+
+        # Image generation (async)
+        config = GenerationConfig(
+            num_images=num_images,
+            resolution=(1024, 1024),
+            output_dir="generated_outputs"
+        )
+        result = await self.generator.generate_async(
+            prompt_spec=prompt_spec,
+            retrieval_result=retrieval_result,
+            style=style,
+            config=config
+        )
+
+        # Record turn
+        if session_id and context is not None:
+            turn = ConversationTurn(
+                turn_number=context.turn_count + 1,
+                role="generate",
+                timestamp=result.timestamp,
+                user_input=user_input,
+                style_id=style_id,
+                refined_intent=prompt_spec.refined_intent,
+                negative_constraints=prompt_spec.negative_constraints,
+                image_paths=result.images
+            )
+            context.add_turn(turn)
+            self.conversation_logger.log_turn(session_id, style_id, turn.to_dict())
+
+        return result, prompt_spec, retrieval_result, style
+
+    async def generate_streaming(
+        self,
+        user_input: str,
+        style_id: str,
+        num_images: int = 4,
+        session_id: Optional[str] = None
+    ) -> AsyncGenerator[dict, None]:
+        """
+        Streaming version of generate(). Yields SSE event dicts as each image completes.
+
+        Events:
+          {"event": "progress", "data": {"stage": "prompt_compiled", ...}}
+          {"event": "progress", "data": {"stage": "rag_complete", ...}}
+          {"event": "image", "data": {"index": 0, "sketch": {...}}}
+          {"event": "complete", "data": {"timestamp": "...", ...}}
+          {"event": "error", "data": {"message": "..."}}
+        """
+        self._initialize()
+
+        style = self.style_registry.get_style(style_id)
+
+        conversation_history = None
+        context = None
+        if session_id:
+            context = self.session_store.get_or_create(session_id, style_id)
+            if context.turn_count > 0:
+                conversation_history = context.to_gpt_messages(exclude_roles=["refine"])
+
+        # Step 1: Compile prompt
+        prompt_spec = await asyncio.to_thread(
+            self.compiler.compile,
+            user_input, style,
+            conversation_history
+        )
+        yield {
+            "event": "progress",
+            "data": {
+                "stage": "prompt_compiled",
+                "refinedIntent": prompt_spec.refined_intent
+            }
+        }
+
+        # Step 2: RAG retrieval
+        retrieval_result = await asyncio.to_thread(
+            self.retriever.retrieve, prompt_spec, style, 3
+        )
+        yield {
+            "event": "progress",
+            "data": {
+                "stage": "rag_complete",
+                "referenceCount": len(retrieval_result.images)
+            }
+        }
+
+        # Step 3: Stream images as they complete
+        config = GenerationConfig(
+            num_images=num_images,
+            resolution=(1024, 1024),
+            output_dir="generated_outputs"
+        )
+
+        from generate.types import GenerationPayload
+        payload = GenerationPayload(
+            prompt_spec=prompt_spec,
+            retrieval_result=retrieval_result,
+            config=config,
+            style=style
+        )
+
+        image_paths: List[Optional[str]] = [None] * num_images
+        image_errors: List[Optional[str]] = [None] * num_images
+        completed_count = 0
+
+        async for idx, image_path, error in self.generator.generate_streaming_async(
+            prompt_spec=prompt_spec,
+            retrieval_result=retrieval_result,
+            style=style,
+            config=config
+        ):
+            image_paths[idx] = image_path
+            image_errors[idx] = error
+            completed_count += 1
+
+            if image_path is not None:
+                rel_path = Path(image_path).relative_to(Path("generated_outputs").resolve())
+                sketch_data = {
+                    "id": f"stream_{idx}",
+                    "resolution": list(config.resolution),
+                    "imagePath": f"/generated/{rel_path}",
+                    "metadata": {
+                        "promptSpec": {
+                            "intent": prompt_spec.intent,
+                            "refinedIntent": prompt_spec.refined_intent,
+                            "negativeConstraints": prompt_spec.negative_constraints or []
+                        },
+                        "referenceImages": [img.path for img in retrieval_result.images],
+                        "retrievalScores": retrieval_result.scores
+                    }
+                }
+                yield {
+                    "event": "image",
+                    "data": {"index": idx, "sketch": sketch_data}
+                }
+            else:
+                yield {
+                    "event": "image",
+                    "data": {"index": idx, "sketch": None, "error": error}
+                }
+
+        # Step 4: Save metadata for all images
+        from generate.utils import save_metadata, get_timestamp
+        timestamp = get_timestamp()
+        successful_paths = [p for p in image_paths if p is not None]
+        if successful_paths:
+            output_dir = os.path.dirname(successful_paths[0])
+            metadata_dict = {
+                "timestamp": timestamp,
+                "archived": False,
+                "user_prompt": prompt_spec.intent,
+                "gpt_compiled_prompt": prompt_spec.refined_intent,
+                "style": {"id": style.id, "name": style.name},
+                "prompt_spec": prompt_spec.to_dict(),
+                "reference_images": [img.path for img in retrieval_result.images],
+                "retrieval_scores": retrieval_result.scores,
+                "config": {
+                    "num_images": config.num_images,
+                    "resolution": list(config.resolution),
+                    "model_name": config.model_name,
+                    "seed": config.seed,
+                    "aspect_ratio": config.aspect_ratio,
+                    "image_size": config.image_size
+                },
+                "images": [os.path.basename(p) for p in successful_paths],
+                "image_errors": [e for e in image_errors if e is not None]
+            }
+            save_metadata(metadata_dict, output_dir)
+
+        # Step 5: Record turn
+        if session_id and context is not None:
+            turn = ConversationTurn(
+                turn_number=context.turn_count + 1,
+                role="generate",
+                timestamp=timestamp,
+                user_input=user_input,
+                style_id=style_id,
+                refined_intent=prompt_spec.refined_intent,
+                negative_constraints=prompt_spec.negative_constraints,
+                image_paths=image_paths
+            )
+            context.add_turn(turn)
+            self.conversation_logger.log_turn(session_id, style_id, turn.to_dict())
+
+        yield {
+            "event": "complete",
+            "data": {
+                "timestamp": timestamp,
+                "totalImages": num_images,
+                "successCount": len(successful_paths),
+                "styleId": style.id
+            }
+        }
 
     def refine(
         self,

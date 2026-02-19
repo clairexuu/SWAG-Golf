@@ -1,7 +1,7 @@
 // API client for communicating with Express backend
 
 import axios from 'axios';
-import type { GenerateRequest, GenerateResponse, Style, FeedbackRequest, FeedbackResponse, SummarizeRequest, SummarizeResponse, GenerationsResponse, RefineRequest } from '../types';
+import type { GenerateRequest, GenerateResponse, Sketch, Style, FeedbackRequest, FeedbackResponse, SummarizeRequest, SummarizeResponse, GenerationsResponse, RefineRequest } from '../types';
 
 const API_BASE_URL = 'http://localhost:3001/api';
 
@@ -95,4 +95,96 @@ export async function confirmGeneration(dirName: string): Promise<void> {
 
 export function getGeneratedImageUrl(dirName: string, filename: string): string {
   return `${API_BASE_URL}/generated/${dirName}/${filename}`;
+}
+
+/**
+ * Stream sketch generation via SSE. Yields individual images as they complete.
+ */
+export async function generateSketchesStream(
+  request: GenerateRequest,
+  callbacks: {
+    onProgress: (stage: string, data: Record<string, unknown>) => void;
+    onImage: (index: number, sketch: Sketch) => void;
+    onComplete: (data: { timestamp: string; totalImages: number; successCount: number; styleId: string }) => void;
+    onError: (message: string) => void;
+  },
+  signal?: AbortSignal
+): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/generate-stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+    signal,
+  });
+
+  if (!response.ok || !response.body) {
+    callbacks.onError('Failed to connect to generation service');
+    return;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    // Parse SSE events from buffer
+    const parts = buffer.split('\n\n');
+    buffer = parts.pop() || ''; // Keep incomplete event
+
+    for (const part of parts) {
+      if (!part.trim()) continue;
+      const lines = part.split('\n');
+      let eventType = '';
+      let eventData = '';
+
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          eventType = line.slice(7);
+        } else if (line.startsWith('data: ')) {
+          eventData = line.slice(6);
+        }
+      }
+
+      if (!eventType || !eventData) continue;
+
+      try {
+        const data = JSON.parse(eventData);
+        switch (eventType) {
+          case 'progress':
+            callbacks.onProgress(data.stage, data);
+            break;
+          case 'image':
+            if (data.sketch) {
+              callbacks.onImage(data.index, data.sketch as Sketch);
+            } else {
+              // Image failed — still notify with error
+              callbacks.onImage(data.index, {
+                id: `error_${data.index}`,
+                imagePath: null,
+                resolution: [1024, 1024],
+                error: data.error || 'Generation failed',
+                metadata: {
+                  promptSpec: { intent: '', refinedIntent: '', negativeConstraints: [] },
+                  referenceImages: [],
+                  retrievalScores: [],
+                },
+              } as Sketch);
+            }
+            break;
+          case 'complete':
+            callbacks.onComplete(data);
+            break;
+          case 'error':
+            callbacks.onError(data.message);
+            break;
+        }
+      } catch {
+        // Ignore unparseable events
+      }
+    }
+  }
 }
