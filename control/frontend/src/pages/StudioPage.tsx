@@ -18,7 +18,7 @@ const getImageUrl = (imagePath: string) => `${API_BASE_URL}${imagePath}`;
 
 export default function StudioPage() {
   const { selectedStyleId, selectStyle } = useStyleContext();
-  const { generate, refine, cancel, isGenerating, refiningIndices, error, sketches, clearSketches } = useGenerationContext();
+  const { generate, refine, cancel, isGenerating, isRestarting, refiningIndices, error, errorCode, sketches, clearSketches, retry, restartAndRetry } = useGenerationContext();
   const { collapsed: sidebarCollapsed, toggle: toggleSidebar } = useSidebar();
   const toast = useToast();
 
@@ -243,10 +243,14 @@ export default function StudioPage() {
         <SketchGrid
           sketches={sketches}
           isGenerating={isGenerating}
+          isRestarting={isRestarting}
           refiningIndices={refiningIndices}
           error={error}
+          errorCode={errorCode}
           onImageClick={(index) => setLightboxIndex(index)}
           onCancel={cancel}
+          onRetry={retry}
+          onRestart={restartAndRetry}
           selectionMode={composerMode === 'refine'}
           selectedIndices={selectedSketchIndices}
           onToggleSelect={handleToggleSelect}

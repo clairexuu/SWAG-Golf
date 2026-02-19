@@ -5,6 +5,7 @@ import type { Style } from '../types';
 interface StyleContextValue {
   styles: Style[];
   stylesLoading: boolean;
+  stylesError: string | null;
   refreshStyles: () => void;
   selectedStyleId: string | null;
   selectedStyleName: string | undefined;
@@ -17,14 +18,19 @@ const StyleContext = createContext<StyleContextValue | null>(null);
 export function StyleProvider({ children }: { children: React.ReactNode }) {
   const [styles, setStyles] = useState<Style[]>([]);
   const [stylesLoading, setStylesLoading] = useState(true);
+  const [stylesError, setStylesError] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
   const [selectedStyleId, setSelectedStyleId] = useState<string | null>(null);
 
   useEffect(() => {
     setStylesLoading(true);
+    setStylesError(null);
     getStyles()
       .then(setStyles)
-      .catch(console.error)
+      .catch((err) => {
+        console.error('Failed to load styles:', err);
+        setStylesError('Unable to load styles. The service may be temporarily unavailable.');
+      })
       .finally(() => setStylesLoading(false));
   }, [version]);
 
@@ -38,7 +44,7 @@ export function StyleProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <StyleContext.Provider value={{
-      styles, stylesLoading, refreshStyles,
+      styles, stylesLoading, stylesError, refreshStyles,
       selectedStyleId, selectedStyleName, selectStyle, clearSelection,
     }}>
       {children}

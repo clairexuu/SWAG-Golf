@@ -1,5 +1,15 @@
 # Release History
 
+## v1.0.2 - Fix Known Issues
+
+- Fixed Generation in Processing Rendering
+- Fixed Image loading issues
+- Optimized Image Generation speed
+
+## v1.0.1 - Fix Known Issues
+
+- test auto-update
+
 ## v1.0.0 — Initial Release
 
 First packaged release of the SWAG Concept Sketch Agent desktop app.
@@ -12,6 +22,8 @@ First packaged release of the SWAG Concept Sketch Agent desktop app.
 - **Archive**: Browse past generations filtered by style (up to 100 per style)
 - **Feedback Loop**: Per-session feedback collection with GPT-summarized style learning
 - **Desktop App**: Electron-packaged with embedded Express API and standalone Python backend (auto-downloads Python 3.12, installs deps on first launch)
+- **Auto-update**: all future updates will be delivered automatically
+
 
 ### Architecture
 
@@ -25,8 +37,3 @@ First packaged release of the SWAG Concept Sketch Agent desktop app.
 
 - macOS (Apple Silicon / arm64): `.dmg` + `.zip`
 - Windows (x64): NSIS installer `.exe` + `.zip`
-
-### Notes
-
-- Users must download this version manually from GitHub Releases
-- Auto-update support is included starting from this version — all future updates will be delivered automatically

@@ -18,6 +18,7 @@ let mainWindow: BrowserWindow | null = null;
 let splashWindow: BrowserWindow | null = null;
 let apiServer: import('http').Server | null = null;
 let pythonProcess: ChildProcess | null = null;
+let pythonConfig: PythonConfig | null = null;
 
 // ---------------------------------------------------------------------------
 // Splash screen (shown during startup / first-run setup)
@@ -217,7 +218,7 @@ async function startup(): Promise<void> {
     updateSplash('Checking Python environment...');
     const pythonBinary = await findOrDownloadPython(dataDir, splashWindow);
 
-    const pythonConfig: PythonConfig = {
+    pythonConfig = {
       pythonBin: pythonBinary,
       dataDir,
       envFilePath: isDev
@@ -274,7 +275,7 @@ async function startup(): Promise<void> {
           type: 'error',
           title: 'Python Backend Error',
           message: `Failed after ${attempts + 1} attempts.\n\n${errorMsg}` +
-            `\n\nThe app will run with limited functionality (mock mode).`,
+            `\n\nThe app will run with limited functionality. You can try restarting the service from the app.`,
           buttons: ['OK'],
         });
         break;
@@ -326,6 +327,43 @@ ipcMain.handle('get-python-status', async () => {
     return res.ok ? 'connected' : 'disconnected';
   } catch {
     return 'disconnected';
+  }
+});
+
+ipcMain.handle('restart-python-backend', async (): Promise<{ success: boolean; error?: string }> => {
+  if (!pythonConfig) {
+    return { success: false, error: 'Application not fully initialized yet' };
+  }
+
+  console.log('[IPC] Restart generation service requested');
+
+  try {
+    killPythonProcess();
+    await new Promise(r => setTimeout(r, 1000));
+
+    const result = await attemptPythonStart(pythonConfig);
+
+    if (result.status === 'healthy') {
+      console.log('[IPC] Generation service restarted successfully');
+      return { success: true };
+    }
+
+    const portBusy = await isPortInUse(pythonConfig.port);
+    console.warn('[IPC] Generation service restart failed:', result.status);
+    return {
+      success: false,
+      error: portBusy
+        ? 'Port is in use by another application'
+        : result.status === 'crashed'
+          ? 'Service crashed during startup'
+          : 'Service did not respond in time'
+    };
+  } catch (err) {
+    console.error('[IPC] Restart error:', err);
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Unknown error'
+    };
   }
 });
 

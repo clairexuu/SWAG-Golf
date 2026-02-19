@@ -1,7 +1,7 @@
 import { useStyleContext } from '../../context/StyleContext';
 import { SkeletonStyleCard } from '../shared/Skeleton';
 import EmptyState from '../shared/EmptyState';
-import { PlusIcon } from '../shared/Icons';
+import { PlusIcon, ErrorCircleIcon } from '../shared/Icons';
 
 interface StyleSelectorProps {
   selectedStyleId: string | null;
@@ -12,7 +12,7 @@ export default function StyleSelector({
   selectedStyleId,
   onStyleSelect,
 }: StyleSelectorProps) {
-  const { styles, stylesLoading } = useStyleContext();
+  const { styles, stylesLoading, stylesError, refreshStyles } = useStyleContext();
 
   if (stylesLoading) {
     return (
@@ -21,6 +21,24 @@ export default function StyleSelector({
         <SkeletonStyleCard />
         <SkeletonStyleCard />
       </div>
+    );
+  }
+
+  if (stylesError) {
+    return (
+      <EmptyState
+        icon={<ErrorCircleIcon className="w-12 h-12 text-swag-pink" />}
+        title="Failed to Load Styles"
+        description={stylesError}
+        action={
+          <button
+            onClick={refreshStyles}
+            className="px-5 py-1.5 text-xs font-bold uppercase tracking-wider rounded-btn bg-swag-green text-black hover:bg-swag-green-muted transition-all"
+          >
+            Retry
+          </button>
+        }
+      />
     );
   }
 

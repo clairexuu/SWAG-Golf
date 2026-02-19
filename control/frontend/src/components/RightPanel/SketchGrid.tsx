@@ -11,16 +11,20 @@ const getImageUrl = (imagePath: string) => `${API_BASE_URL}${imagePath}`;
 interface SketchGridProps {
   sketches: Sketch[];
   isGenerating: boolean;
+  isRestarting?: boolean;
   refiningIndices?: Set<number>;
   error: string | null;
+  errorCode?: string | null;
   onImageClick: (index: number) => void;
   onCancel: () => void;
+  onRetry?: () => void;
+  onRestart?: () => void;
   selectionMode?: boolean;
   selectedIndices?: Set<number>;
   onToggleSelect?: (index: number) => void;
 }
 
-export default function SketchGrid({ sketches, isGenerating, refiningIndices, error, onImageClick, onCancel, selectionMode, selectedIndices, onToggleSelect }: SketchGridProps) {
+export default function SketchGrid({ sketches, isGenerating, isRestarting, refiningIndices, error, errorCode, onImageClick, onCancel, onRetry, onRestart, selectionMode, selectedIndices, onToggleSelect }: SketchGridProps) {
   const handleDownload = async (sketch: Sketch) => {
     if (!sketch.imagePath) return;
     const imageUrl = getImageUrl(sketch.imagePath);
@@ -66,11 +70,47 @@ export default function SketchGrid({ sketches, isGenerating, refiningIndices, er
 
   // Error state
   if (error) {
+    const isBackendError = errorCode === 'BACKEND_UNAVAILABLE';
+    const displayMessage = isBackendError
+      ? 'The generation service is temporarily unavailable. You can try again or restart the service.'
+      : error;
+
     return (
       <EmptyState
         icon={<ErrorCircleIcon className="w-16 h-16 text-swag-pink" />}
         title="Generation Failed"
-        description={error}
+        description={displayMessage}
+        action={
+          <div className="flex flex-col items-center gap-3">
+            {onRetry && !isRestarting && (
+              <button
+                onClick={onRetry}
+                className="px-6 py-2 text-xs font-bold uppercase tracking-wider rounded-btn bg-swag-green text-black hover:bg-swag-green-muted transition-all"
+              >
+                Try Again
+              </button>
+            )}
+            {isBackendError && onRestart && !isRestarting && (
+              <button
+                onClick={onRestart}
+                className="px-6 py-2 text-xs font-bold uppercase tracking-wider rounded-btn bg-surface-3 text-swag-white hover:bg-surface-4 transition-all"
+              >
+                Restart Service
+              </button>
+            )}
+            {isRestarting && (
+              <div className="flex items-center gap-2 text-swag-text-tertiary">
+                <div className="w-4 h-4 border-2 border-swag-green border-t-transparent rounded-full animate-spin" />
+                <span className="text-xs uppercase tracking-wider">Restarting service...</span>
+              </div>
+            )}
+            {(errorCode === 'RESTART_FAILED' || errorCode === 'NO_ELECTRON') && (
+              <p className="text-xs text-swag-text-tertiary mt-1">
+                If the problem persists, please restart the application.
+              </p>
+            )}
+          </div>
+        }
       />
     );
   }
@@ -79,7 +119,7 @@ export default function SketchGrid({ sketches, isGenerating, refiningIndices, er
   if (isGenerating && (!refiningIndices || refiningIndices.size === 0)) {
     return (
       <div className="flex-1 flex flex-col overflow-hidden p-4">
-        <div className="flex-1 grid grid-cols-4 gap-4 overflow-hidden justify-items-center">
+        <div className="flex-1 grid grid-cols-4 gap-4 justify-items-center">
           <SkeletonSketchCard />
           <SkeletonSketchCard />
           <SkeletonSketchCard />

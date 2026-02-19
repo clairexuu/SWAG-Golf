@@ -1,12 +1,16 @@
 // POST /api/generate - Generate concept sketches
 
 import { Router } from 'express';
-import { MockGenerationService } from '../services/mock-service.js';
 import { fetchFromPython, checkPythonHealth } from '../services/python-client.js';
 import type { GenerateRequest, GenerateResponse, RefineRequest } from '../../../shared/schema/api-contracts.js';
 
 const router = Router();
-const mockService = new MockGenerationService();
+const MAX_RETRIES = 2;
+const RETRY_DELAYS = [1000, 2000]; // ms
+
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 router.post('/generate', async (req, res) => {
   // Abort Python fetch if client disconnects (user cancelled)
@@ -42,35 +46,44 @@ router.post('/generate', async (req, res) => {
       });
     }
 
-    // Try Python backend first
-    const pythonHealthy = await checkPythonHealth();
+    // Retry loop: try up to 3 times with backoff
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      if (abortController.signal.aborted) return;
 
-    if (pythonHealthy) {
-      try {
-        const response = await fetchFromPython<GenerateResponse>('/generate', {
-          method: 'POST',
-          body: JSON.stringify({ input, styleId, numImages: numImages || 4, experimentalMode, sessionId })
-        }, abortController.signal);
-        return res.json(response);
-      } catch (pythonError) {
-        if ((pythonError as Error).name === 'AbortError') {
-          console.log('Generation cancelled by client');
-          return;
+      const pythonHealthy = await checkPythonHealth();
+      if (pythonHealthy) {
+        try {
+          const response = await fetchFromPython<GenerateResponse>('/generate', {
+            method: 'POST',
+            body: JSON.stringify({ input, styleId, numImages: numImages || 4, experimentalMode, sessionId })
+          }, abortController.signal);
+          return res.json(response);
+        } catch (pythonError) {
+          if ((pythonError as Error).name === 'AbortError') {
+            console.log('Generation cancelled by client');
+            return;
+          }
+          console.error(`[Generate] Attempt ${attempt + 1} failed:`, pythonError);
         }
-        console.error('Python backend error, falling back to mock:', pythonError);
+      } else {
+        console.warn(`[Generate] Health check failed (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
+      }
+
+      // Wait before retrying (skip delay after last attempt)
+      if (attempt < MAX_RETRIES) {
+        console.log(`[Generate] Retrying in ${RETRY_DELAYS[attempt]}ms...`);
+        await delay(RETRY_DELAYS[attempt]);
       }
     }
 
-    // Fallback to mock service
-    console.log('Using mock generation service');
-    const result = await mockService.generate({
-      input,
-      styleId,
-      numImages: numImages || 4,
-      experimentalMode: experimentalMode || false
+    // All retries exhausted
+    return res.status(503).json({
+      success: false,
+      error: {
+        code: 'BACKEND_UNAVAILABLE',
+        message: 'Generation service temporarily unavailable. Please try again or restart the service.'
+      }
     });
-
-    res.json(result);
   } catch (error) {
     if ((error as Error).name === 'AbortError') {
       console.log('Generation cancelled by client');
@@ -109,38 +122,41 @@ router.post('/refine', async (req, res) => {
       });
     }
 
-    // Refine requires the real Python backend — no mock fallback
-    const pythonHealthy = await checkPythonHealth();
+    // Retry loop: try up to 3 times with backoff
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      if (abortController.signal.aborted) return;
 
-    if (pythonHealthy) {
-      try {
-        const response = await fetchFromPython<GenerateResponse>('/refine', {
-          method: 'POST',
-          body: JSON.stringify({ refinePrompt, selectedImagePaths, styleId, sessionId })
-        }, abortController.signal);
-        return res.json(response);
-      } catch (pythonError) {
-        if ((pythonError as Error).name === 'AbortError') {
-          console.log('Refine cancelled by client');
-          return;
-        }
-        const message = pythonError instanceof Error ? pythonError.message : 'Unknown error';
-        console.error('Python refine error:', message);
-        return res.status(502).json({
-          success: false,
-          error: {
-            code: 'REFINE_ERROR',
-            message,
+      const pythonHealthy = await checkPythonHealth();
+      if (pythonHealthy) {
+        try {
+          const response = await fetchFromPython<GenerateResponse>('/refine', {
+            method: 'POST',
+            body: JSON.stringify({ refinePrompt, selectedImagePaths, styleId, sessionId })
+          }, abortController.signal);
+          return res.json(response);
+        } catch (pythonError) {
+          if ((pythonError as Error).name === 'AbortError') {
+            console.log('Refine cancelled by client');
+            return;
           }
-        });
+          console.error(`[Refine] Attempt ${attempt + 1} failed:`, pythonError);
+        }
+      } else {
+        console.warn(`[Refine] Health check failed (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
+      }
+
+      if (attempt < MAX_RETRIES) {
+        console.log(`[Refine] Retrying in ${RETRY_DELAYS[attempt]}ms...`);
+        await delay(RETRY_DELAYS[attempt]);
       }
     }
 
-    res.status(503).json({
+    // All retries exhausted
+    return res.status(503).json({
       success: false,
       error: {
         code: 'BACKEND_UNAVAILABLE',
-        message: 'Python backend is required for refine but is not available'
+        message: 'Generation service temporarily unavailable. Please try again or restart the service.'
       }
     });
   } catch (error) {

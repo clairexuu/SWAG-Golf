@@ -7,6 +7,7 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
     getVersion: () => process.versions.electron,
     getAppVersion: () => electron_1.ipcRenderer.invoke('get-app-version'),
     getPythonStatus: () => electron_1.ipcRenderer.invoke('get-python-status'),
+    restartBackend: () => electron_1.ipcRenderer.invoke('restart-python-backend'),
     checkForUpdates: () => electron_1.ipcRenderer.invoke('check-for-updates'),
     onUpdateProgress: (callback) => {
         electron_1.ipcRenderer.on('update-download-progress', (_event, percent) => callback(percent));

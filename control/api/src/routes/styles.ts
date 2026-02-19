@@ -8,113 +8,50 @@ import { fetchFromPython, checkPythonHealth } from '../services/python-client.js
 const PYTHON_API_URL = process.env.PYTHON_API_URL || 'http://127.0.0.1:8000';
 
 const router = Router();
+const MAX_RETRIES = 2;
+const RETRY_DELAYS = [1000, 2000]; // ms
 
-// Fallback mock styles (used when Python backend is unavailable)
-const mockStyles: Style[] = [
-  {
-    id: 'vintage-mascot',
-    name: 'Vintage Mascot',
-    description: 'Thick ink lines, retro character style with bold outlines',
-    visualRules: {
-      lineWeight: 'heavy',
-      looseness: 'controlled',
-      complexity: 'medium',
-      additionalRules: {
-        characterStyle: 'cartoonish',
-        era: '1950s-1970s'
-      }
-    },
-    referenceImages: [],
-    doNotUse: []
-  },
-  {
-    id: 'modern-minimal',
-    name: 'Modern Minimal',
-    description: 'Clean lines, geometric shapes, contemporary aesthetic',
-    visualRules: {
-      lineWeight: 'thin',
-      looseness: 'precise',
-      complexity: 'low',
-      additionalRules: {
-        style: 'geometric',
-        emphasis: 'simplicity'
-      }
-    },
-    referenceImages: [],
-    doNotUse: []
-  },
-  {
-    id: 'retro-badge',
-    name: 'Retro Badge',
-    description: 'Classic emblem style with ornate details',
-    visualRules: {
-      lineWeight: 'medium',
-      looseness: 'structured',
-      complexity: 'high',
-      additionalRules: {
-        format: 'badge/emblem',
-        ornamentation: 'detailed'
-      }
-    },
-    referenceImages: [],
-    doNotUse: []
-  },
-  {
-    id: 'playful-cartoon',
-    name: 'Playful Cartoon',
-    description: 'Fun, bouncy characters with exaggerated features',
-    visualRules: {
-      lineWeight: 'varied',
-      looseness: 'loose',
-      complexity: 'medium',
-      additionalRules: {
-        characterStyle: 'exaggerated',
-        mood: 'playful'
-      }
-    },
-    referenceImages: [],
-    doNotUse: []
-  },
-  {
-    id: 'technical-diagram',
-    name: 'Technical Diagram',
-    description: 'Precise, blueprint-style technical illustration',
-    visualRules: {
-      lineWeight: 'uniform',
-      looseness: 'precise',
-      complexity: 'high',
-      additionalRules: {
-        style: 'technical',
-        annotations: 'detailed'
-      }
-    },
-    referenceImages: [],
-    doNotUse: []
-  }
-];
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 router.get('/styles', async (req, res) => {
   try {
-    // Try Python backend first
-    const pythonHealthy = await checkPythonHealth();
+    // Retry loop: try up to 3 times with backoff
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      const pythonHealthy = await checkPythonHealth();
+      if (pythonHealthy) {
+        try {
+          const response = await fetchFromPython<{ success: boolean; styles: Style[] }>('/styles');
+          return res.json(response);
+        } catch (err) {
+          console.error(`[Styles] Attempt ${attempt + 1} failed:`, err);
+        }
+      } else {
+        console.warn(`[Styles] Health check failed (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
+      }
 
-    if (pythonHealthy) {
-      const response = await fetchFromPython<{ success: boolean; styles: Style[] }>('/styles');
-      return res.json(response);
+      if (attempt < MAX_RETRIES) {
+        await delay(RETRY_DELAYS[attempt]);
+      }
     }
 
-    // Fallback to mock styles if Python unavailable
-    console.log('Python backend unavailable, using mock styles');
-    res.json({
-      success: true,
-      styles: mockStyles
+    // All retries exhausted
+    res.status(503).json({
+      success: false,
+      error: {
+        code: 'BACKEND_UNAVAILABLE',
+        message: 'Style service temporarily unavailable. Please try again or restart the service.'
+      }
     });
   } catch (error) {
     console.error('Error fetching styles:', error);
-    // Fallback to mock styles on error
-    res.json({
-      success: true,
-      styles: mockStyles
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'STYLES_ERROR',
+        message: error instanceof Error ? error.message : 'Failed to load styles'
+      }
     });
   }
 });

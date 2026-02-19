@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { Sketch } from '../../types';
 import { DownloadIcon, ExpandIcon, ErrorCircleIcon, CheckIcon } from '../shared/Icons';
 
@@ -14,6 +15,8 @@ interface SketchCardProps {
 }
 
 export default function SketchCard({ sketch, onExpand, onDownload, selectionMode, isSelected, onToggleSelect }: SketchCardProps) {
+  const [imgError, setImgError] = useState(false);
+
   // Error state — show error message instead of image
   if (sketch.error) {
     return (
@@ -60,11 +63,18 @@ export default function SketchCard({ sketch, onExpand, onDownload, selectionMode
 
       {/* Image container */}
       <div className="h-full">
-        <img
-          src={sketch.imagePath ? getImageUrl(sketch.imagePath) : ''}
-          alt={sketch.id}
-          className="w-full h-full object-cover"
-        />
+        {imgError ? (
+          <div className="w-full h-full flex items-center justify-center bg-surface-2">
+            <ErrorCircleIcon className="w-8 h-8 text-swag-text-tertiary" />
+          </div>
+        ) : (
+          <img
+            src={sketch.imagePath ? getImageUrl(sketch.imagePath) : ''}
+            alt={sketch.id}
+            className="w-full h-full object-cover"
+            onError={() => setImgError(true)}
+          />
+        )}
       </div>
 
       {/* Hover overlay */}

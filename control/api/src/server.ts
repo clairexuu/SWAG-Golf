@@ -49,7 +49,7 @@ export function createApp(options: ApiServerOptions = {}) {
       status: 'ok',
       pythonBackend: pythonConnected ? 'connected' : 'disconnected',
       version: '1.0.0',
-      mode: pythonConnected ? 'production' : 'mock'
+      mode: pythonConnected ? 'production' : 'limited'
     });
   });
 
@@ -106,7 +106,7 @@ export function startApiServer(options: ApiServerOptions = {}): Promise<import('
     const server = app.listen(port, async () => {
       const pythonConnected = await checkPythonHealth();
       console.log(`[API] Server running on http://localhost:${port}`);
-      console.log(`[API] Python backend: ${pythonConnected ? 'CONNECTED' : 'DISCONNECTED (using mock)'}`);
+      console.log(`[API] Python backend: ${pythonConnected ? 'CONNECTED' : 'DISCONNECTED'}`);
       resolve(server);
     });
   });
