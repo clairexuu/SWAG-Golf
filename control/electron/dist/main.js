@@ -255,7 +255,7 @@ async function startup() {
                     type: 'warning',
                     title: 'Python Backend Failed',
                     message: errorMsg,
-                    buttons: ['Retry', 'Continue without Python'],
+                    buttons: ['Retry', 'Quit'],
                     defaultId: 0,
                     cancelId: 1,
                 });
@@ -265,20 +265,22 @@ async function startup() {
                     attempts++;
                     continue;
                 }
-                // User chose to continue without Python
-                break;
+                // User chose to quit
+                electron_1.app.quit();
+                return;
             }
             else {
                 // Final attempt exhausted
                 updateSplash('Python backend failed to start');
-                electron_1.dialog.showMessageBox({
+                await electron_1.dialog.showMessageBox({
                     type: 'error',
                     title: 'Python Backend Error',
                     message: `Failed after ${attempts + 1} attempts.\n\n${errorMsg}` +
-                        `\n\nThe app will run with limited functionality. You can try restarting the service from the app.`,
-                    buttons: ['OK'],
+                        `\n\nThe application cannot run without the Python backend.`,
+                    buttons: ['Quit'],
                 });
-                break;
+                electron_1.app.quit();
+                return;
             }
         }
         // Step 5: Start Express API (embedded) — skip if already running (e.g. start-dev.sh)

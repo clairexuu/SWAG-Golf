@@ -422,12 +422,27 @@ class PipelineService:
         image_errors: List[Optional[str]] = [None] * num_images
         completed_count = 0
 
+        # Collect retry notifications and emit as SSE progress events
+        retry_events = []
+
+        def on_retry(index, attempt, max_retries):
+            retry_events.append({"index": index, "attempt": attempt, "maxRetries": max_retries})
+
         async for idx, image_path, error in self.generator.generate_streaming_async(
             prompt_spec=prompt_spec,
             retrieval_result=retrieval_result,
             style=style,
-            config=config
+            config=config,
+            on_retry=on_retry
         ):
+            # Drain any retry events accumulated since last image completed
+            for info in retry_events:
+                yield {
+                    "event": "progress",
+                    "data": {"stage": "retry", **info}
+                }
+            retry_events.clear()
+
             image_paths[idx] = image_path
             image_errors[idx] = error
             completed_count += 1
@@ -590,6 +605,147 @@ class PipelineService:
             self.conversation_logger.log_turn(session_id, style_id, turn.to_dict())
 
         return result, style
+
+    async def refine_streaming(
+        self,
+        refine_prompt: str,
+        selected_image_paths: List[str],
+        style_id: str,
+        session_id: Optional[str] = None,
+    ) -> AsyncGenerator[dict, None]:
+        """
+        Streaming version of refine(). Yields SSE event dicts as each image completes.
+        """
+        self._initialize()
+
+        style = self.style_registry.get_style(style_id)
+
+        original_context = ""
+        refine_history = []
+        if session_id:
+            context = self.session_store.get_or_create(session_id, style_id)
+            for turn in reversed(context.turns):
+                if turn.role == "generate" and turn.refined_intent:
+                    original_context = turn.refined_intent
+                    break
+            refine_history = []
+            for turn in reversed(context.turns):
+                if turn.role == "refine":
+                    refine_history.insert(0, turn.user_input)
+                elif turn.role == "generate":
+                    break
+
+        config = GenerationConfig(
+            num_images=len(selected_image_paths),
+            resolution=(1024, 1024),
+            output_dir="generated_outputs"
+        )
+
+        num_images = len(selected_image_paths)
+        image_paths: List[Optional[str]] = [None] * num_images
+        image_errors: List[Optional[str]] = [None] * num_images
+
+        retry_events = []
+
+        def on_retry(index, attempt, max_retries):
+            retry_events.append({"index": index, "attempt": attempt, "maxRetries": max_retries})
+
+        async for idx, image_path, error in self.generator.refine_streaming_async(
+            refine_prompt=refine_prompt,
+            original_context=original_context,
+            refine_history=refine_history,
+            source_image_paths=selected_image_paths,
+            style=style,
+            config=config,
+            on_retry=on_retry
+        ):
+            # Drain retry events
+            for info in retry_events:
+                yield {
+                    "event": "progress",
+                    "data": {"stage": "retry", **info}
+                }
+            retry_events.clear()
+
+            image_paths[idx] = image_path
+            image_errors[idx] = error
+
+            if image_path is not None:
+                rel_path = Path(image_path).relative_to(Path("generated_outputs").resolve())
+                sketch_data = {
+                    "id": f"refine_{idx}",
+                    "resolution": list(config.resolution),
+                    "imagePath": f"/generated/{rel_path}",
+                    "metadata": {
+                        "promptSpec": {
+                            "intent": refine_prompt,
+                            "refinedIntent": original_context,
+                            "negativeConstraints": []
+                        },
+                        "referenceImages": selected_image_paths,
+                        "retrievalScores": []
+                    }
+                }
+                yield {
+                    "event": "image",
+                    "data": {"index": idx, "sketch": sketch_data}
+                }
+            else:
+                yield {
+                    "event": "image",
+                    "data": {"index": idx, "sketch": None, "error": error}
+                }
+
+        # Save metadata
+        from generate.utils import save_metadata, get_timestamp
+        timestamp = get_timestamp()
+        successful_paths = [p for p in image_paths if p is not None]
+        if successful_paths:
+            output_dir = os.path.dirname(successful_paths[0])
+            metadata_dict = {
+                "timestamp": timestamp,
+                "archived": False,
+                "mode": "refine",
+                "refine_prompt": refine_prompt,
+                "original_context": original_context,
+                "refine_history": refine_history,
+                "source_images": selected_image_paths,
+                "style": {"id": style.id, "name": style.name},
+                "config": {
+                    "num_images": config.num_images,
+                    "resolution": list(config.resolution),
+                    "model_name": config.model_name,
+                    "aspect_ratio": config.aspect_ratio,
+                },
+                "images": [os.path.basename(p) for p in successful_paths],
+                "image_errors": [e for e in image_errors if e is not None],
+            }
+            save_metadata(metadata_dict, output_dir)
+
+        # Record turn
+        if session_id:
+            context = self.session_store.get_or_create(session_id, style_id)
+            turn = ConversationTurn(
+                turn_number=context.turn_count + 1,
+                role="refine",
+                timestamp=timestamp,
+                user_input=refine_prompt,
+                style_id=style_id,
+                refined_intent=original_context,
+                image_paths=image_paths,
+            )
+            context.add_turn(turn)
+            self.conversation_logger.log_turn(session_id, style_id, turn.to_dict())
+
+        yield {
+            "event": "complete",
+            "data": {
+                "timestamp": timestamp,
+                "totalImages": num_images,
+                "successCount": len(successful_paths),
+                "styleId": style.id
+            }
+        }
 
     def add_feedback(
         self,

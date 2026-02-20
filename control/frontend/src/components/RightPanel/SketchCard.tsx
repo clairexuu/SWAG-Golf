@@ -67,7 +67,7 @@ export default function SketchCard({ sketch, onExpand, onDownload, selectionMode
         {hasError ? (
           <div className="w-full h-full flex flex-col items-center justify-center gap-2 bg-surface-2">
             <ErrorCircleIcon className="w-8 h-8 text-swag-text-tertiary" />
-            <span className="text-[10px] text-swag-text-quaternary uppercase tracking-wider">Failed to load</span>
+            <span className="text-[10px] text-swag-text-quaternary uppercase tracking-wider">Image unavailable</span>
           </div>
         ) : imgSrc ? (
           <>

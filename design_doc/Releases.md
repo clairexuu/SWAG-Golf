@@ -12,6 +12,7 @@
   - Converted Gemini API calls from ThreadPoolExecutor to native async (`asyncio.gather`) 
   - Lowered default image resolution from 2K to 1K preview mode (~30-50% faster)
   - Added SSE streaming with progressive display (time to first image reduced from ~20-35s to ~8-14s)
+- Optimized error handling and retry
 
 ## v1.0.1 - Fix Known Issues
 

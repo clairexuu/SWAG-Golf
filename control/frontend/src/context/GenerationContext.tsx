@@ -1,6 +1,5 @@
 import { createContext, useContext, useState, useRef, useCallback } from 'react';
-import axios from 'axios';
-import { generateSketchesStream, refineSketches, confirmGeneration } from '../services/api';
+import { generateSketchesStream, refineSketchesStream, confirmGeneration } from '../services/api';
 import type { GenerateRequest, RefineRequest, Sketch } from '../types';
 
 const STORAGE_KEY = 'swag_sketches';
@@ -29,6 +28,7 @@ function clearStorage() {
 interface GenerationContextValue {
   isGenerating: boolean;
   isRestarting: boolean;
+  serverBusy: boolean;
   refiningIndices: Set<number>;
   error: string | null;
   errorCode: string | null;
@@ -46,6 +46,7 @@ const GenerationContext = createContext<GenerationContextValue | null>(null);
 export function GenerationProvider({ children }: { children: React.ReactNode }) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isRestarting, setIsRestarting] = useState(false);
+  const [serverBusy, setServerBusy] = useState(false);
   const [refiningIndices, setRefiningIndices] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(null);
@@ -66,6 +67,7 @@ export function GenerationProvider({ children }: { children: React.ReactNode }) 
 
     lastRequestRef.current = { type: 'generate', request };
     setIsGenerating(true);
+    setServerBusy(false);
     setRefiningIndices(new Set());
     setError(null);
     setErrorCode(null);
@@ -88,8 +90,10 @@ export function GenerationProvider({ children }: { children: React.ReactNode }) 
       await generateSketchesStream(
         request,
         {
-          onProgress: () => {
-            // Could show stage indicators in future
+          onProgress: (stage) => {
+            if (stage === 'retry') {
+              setServerBusy(true);
+            }
           },
           onImage: (index, sketch) => {
             setSketches(prev => {
@@ -111,8 +115,16 @@ export function GenerationProvider({ children }: { children: React.ReactNode }) 
             });
           },
           onError: (message) => {
-            setError(message);
-            setErrorCode('GENERATION_ERROR');
+            // Only set global error if no successful images have been received yet.
+            // Per-image failures are shown inline via the sketch.error field.
+            setSketches(prev => {
+              const hasAnyImage = prev.some(s => s.imagePath !== null);
+              if (!hasAnyImage) {
+                setError(message);
+                setErrorCode('GENERATION_ERROR');
+              }
+              return prev;
+            });
           },
         },
         controller.signal
@@ -123,7 +135,7 @@ export function GenerationProvider({ children }: { children: React.ReactNode }) 
         return;
       }
       console.error('Generation error:', err);
-      setError(err instanceof Error ? err.message : 'Unknown error occurred');
+      setError('Something went wrong. Please try again.');
       setErrorCode(null);
     } finally {
       // Only clear generating state if this controller wasn't replaced
@@ -142,48 +154,67 @@ export function GenerationProvider({ children }: { children: React.ReactNode }) 
 
     lastRequestRef.current = { type: 'refine', request, indices: selectedIndices };
     setIsGenerating(true);
+    setServerBusy(false);
     setRefiningIndices(new Set(selectedIndices));
     setError(null);
     setErrorCode(null);
 
     try {
-      const response = await refineSketches(request, controller.signal);
-
-      if (response.success && response.data) {
-        // In-place replacement: only swap the selected positions
-        setSketches(prev => {
-          const next = [...prev];
-          response.data!.sketches.forEach((refined, i) => {
-            if (i < selectedIndices.length) {
-              next[selectedIndices[i]] = refined;
+      await refineSketchesStream(
+        request,
+        {
+          onProgress: (stage) => {
+            if (stage === 'retry') {
+              setServerBusy(true);
             }
-          });
-          saveToStorage(next);
-          return next;
-        });
-
-        // Confirm refine so it appears in archive (fire-and-forget)
-        const firstPath = response.data.sketches.find(s => s.imagePath)?.imagePath;
-        if (firstPath) {
-          const dirName = firstPath.split('/')[2];
-          confirmGeneration(dirName).catch(() => {});
-        }
-      } else {
-        setError(response.error?.message || 'Refinement failed');
-        setErrorCode(response.error?.code || null);
-      }
+          },
+          onImage: (index, sketch) => {
+            // Map streaming index back to the original grid position
+            const gridIndex = selectedIndices[index];
+            if (gridIndex != null) {
+              setSketches(prev => {
+                const next = [...prev];
+                next[gridIndex] = sketch;
+                return next;
+              });
+              setRefiningIndices(prev => {
+                const next = new Set(prev);
+                next.delete(gridIndex);
+                return next;
+              });
+            }
+          },
+          onComplete: () => {
+            setSketches(prev => {
+              saveToStorage(prev);
+              const firstPath = prev.find(s => s.imagePath)?.imagePath;
+              if (firstPath) {
+                const dirName = firstPath.split('/')[2];
+                confirmGeneration(dirName).catch(() => {});
+              }
+              return prev;
+            });
+          },
+          onError: (message) => {
+            setSketches(prev => {
+              const hasAnyImage = prev.some(s => s.imagePath !== null);
+              if (!hasAnyImage) {
+                setError(message);
+                setErrorCode('REFINE_ERROR');
+              }
+              return prev;
+            });
+          },
+        },
+        controller.signal
+      );
     } catch (err) {
-      if (axios.isCancel(err) || (err instanceof DOMException && err.name === 'AbortError')) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
         return;
       }
       console.error('Refine error:', err);
-      if (axios.isAxiosError(err) && err.response?.data?.error) {
-        setError(err.response.data.error.message);
-        setErrorCode(err.response.data.error.code || null);
-      } else {
-        setError(err instanceof Error ? err.message : 'Unknown error occurred');
-        setErrorCode(null);
-      }
+      setError('Something went wrong. Please try again.');
+      setErrorCode(null);
     } finally {
       if (abortControllerRef.current === controller) {
         setIsGenerating(false);
@@ -253,7 +284,7 @@ export function GenerationProvider({ children }: { children: React.ReactNode }) 
 
   return (
     <GenerationContext.Provider value={{
-      isGenerating, isRestarting, refiningIndices, error, errorCode, sketches,
+      isGenerating, isRestarting, serverBusy, refiningIndices, error, errorCode, sketches,
       generate, refine, cancel, clearSketches, retry, restartAndRetry,
     }}>
       {children}

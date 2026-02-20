@@ -89,6 +89,96 @@ export async function refineSketches(request: RefineRequest, signal?: AbortSigna
   return response.data;
 }
 
+/**
+ * Stream sketch refinement via SSE. Yields individual images as they complete.
+ */
+export async function refineSketchesStream(
+  request: RefineRequest,
+  callbacks: {
+    onProgress: (stage: string, data: Record<string, unknown>) => void;
+    onImage: (index: number, sketch: Sketch) => void;
+    onComplete: (data: { timestamp: string; totalImages: number; successCount: number; styleId: string }) => void;
+    onError: (message: string) => void;
+  },
+  signal?: AbortSignal
+): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/refine-stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+    signal,
+  });
+
+  if (!response.ok || !response.body) {
+    callbacks.onError('Failed to connect to refinement service');
+    return;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const parts = buffer.split('\n\n');
+    buffer = parts.pop() || '';
+
+    for (const part of parts) {
+      if (!part.trim()) continue;
+      const lines = part.split('\n');
+      let eventType = '';
+      let eventData = '';
+
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          eventType = line.slice(7);
+        } else if (line.startsWith('data: ')) {
+          eventData = line.slice(6);
+        }
+      }
+
+      if (!eventType || !eventData) continue;
+
+      try {
+        const data = JSON.parse(eventData);
+        switch (eventType) {
+          case 'progress':
+            callbacks.onProgress(data.stage, data);
+            break;
+          case 'image':
+            if (data.sketch) {
+              callbacks.onImage(data.index, data.sketch as Sketch);
+            } else {
+              callbacks.onImage(data.index, {
+                id: `error_${data.index}`,
+                imagePath: null,
+                resolution: [1024, 1024],
+                error: data.error || 'Refinement failed',
+                metadata: {
+                  promptSpec: { intent: '', refinedIntent: '', negativeConstraints: [] },
+                  referenceImages: [],
+                  retrievalScores: [],
+                },
+              } as Sketch);
+            }
+            break;
+          case 'complete':
+            callbacks.onComplete(data);
+            break;
+          case 'error':
+            callbacks.onError(data.message);
+            break;
+        }
+      } catch {
+        // Ignore unparseable events
+      }
+    }
+  }
+}
+
 export async function confirmGeneration(dirName: string): Promise<void> {
   await apiClient.post(`/generations/${dirName}/confirm`);
 }

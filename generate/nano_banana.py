@@ -8,6 +8,7 @@ from .adapter import ImageModelAdapter
 from .types import GenerationPayload, GenerationConfig
 from .utils import get_timestamp, create_output_directory, convert_to_grayscale
 from .nano_banana_client import NanaBananaClient
+from PIL import Image as PILImage
 
 
 class NanaBananaAdapter(ImageModelAdapter):
@@ -136,6 +137,10 @@ class NanaBananaAdapter(ImageModelAdapter):
                 out = Path(output_dir) / f"sketch_{i}.png"
                 with open(out, 'wb') as f:
                     f.write(data)
+                # Validate the written file is complete and loadable
+                if not out.exists() or out.stat().st_size == 0:
+                    raise IOError(f"Image file was not written correctly")
+                PILImage.open(out).verify()
                 return str(out.absolute())
 
             from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -209,6 +214,10 @@ class NanaBananaAdapter(ImageModelAdapter):
                 out = Path(output_dir) / f"sketch_{i}.png"
                 with open(out, 'wb') as f:
                     f.write(data)
+                # Validate the written file is complete and loadable
+                if not out.exists() or out.stat().st_size == 0:
+                    raise IOError(f"Image file was not written correctly")
+                PILImage.open(out).verify()
                 return str(out.absolute())
 
             from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -281,7 +290,8 @@ class NanaBananaAdapter(ImageModelAdapter):
 
     async def generate_streaming_async(
         self,
-        payload: GenerationPayload
+        payload: GenerationPayload,
+        on_retry=None
     ) -> AsyncGenerator[Tuple[int, Optional[str], Optional[str]], None]:
         """Streaming async generator that yields (index, image_path, error) as each image completes."""
         self.validate_config(payload.config)
@@ -304,14 +314,59 @@ class NanaBananaAdapter(ImageModelAdapter):
             resolution=config.resolution,
             aspect_ratio=config.aspect_ratio,
             image_size=config.image_size,
-            seed=config.seed
+            seed=config.seed,
+            on_retry=on_retry
         ):
             if img_bytes is not None:
                 # Save this image (CPU-bound grayscale + disk write)
-                path = await asyncio.to_thread(
-                    self._process_and_save_single, idx, img_bytes, output_dir, config
-                )
-                yield (idx, path, None)
+                try:
+                    path = await asyncio.to_thread(
+                        self._process_and_save_single, idx, img_bytes, output_dir, config
+                    )
+                    yield (idx, path, None)
+                except Exception as save_err:
+                    print(f"[Streaming] Image {idx} save failed: {save_err}")
+                    yield (idx, None, f"Failed to save image: {save_err}")
+            else:
+                yield (idx, None, error)
+
+    async def refine_streaming_async(
+        self,
+        refine_prompt: str,
+        original_context: str,
+        refine_history: List[str],
+        source_image_paths: List[str],
+        config: GenerationConfig,
+        on_retry=None
+    ) -> AsyncGenerator[Tuple[int, Optional[str], Optional[str]], None]:
+        """Streaming async refine that yields (index, image_path, error) as each image completes."""
+        if self.client is None:
+            raise RuntimeError("Image generation client not initialized. Set GOOGLE_API_KEY in your environment.")
+
+        timestamp = get_timestamp()
+        output_dir = create_output_directory(config.output_dir, timestamp)
+
+        print(f"Calling Nano Banana API (refine streaming)...")
+        print(f"  Refine prompt: {refine_prompt[:80]}...")
+        print(f"  Source images: {len(source_image_paths)}")
+
+        async for idx, img_bytes, error in self.client.refine_streaming_async(
+            refine_prompt=refine_prompt,
+            original_context=original_context,
+            refine_history=refine_history,
+            source_images=source_image_paths,
+            aspect_ratio=config.aspect_ratio,
+            on_retry=on_retry
+        ):
+            if img_bytes is not None:
+                try:
+                    path = await asyncio.to_thread(
+                        self._process_and_save_single, idx, img_bytes, output_dir, config
+                    )
+                    yield (idx, path, None)
+                except Exception as save_err:
+                    print(f"[Refine Streaming] Image {idx} save failed: {save_err}")
+                    yield (idx, None, f"Failed to save image: {save_err}")
             else:
                 yield (idx, None, error)
 
@@ -322,6 +377,11 @@ class NanaBananaAdapter(ImageModelAdapter):
         out = Path(output_dir) / f"sketch_{index}.png"
         with open(out, 'wb') as f:
             f.write(data)
+        # Validate the written file is complete and loadable
+        if not out.exists() or out.stat().st_size == 0:
+            raise IOError(f"Image file was not written correctly")
+        
+        PILImage.open(out).verify()
         return str(out.absolute())
 
     async def _save_images_async(
@@ -338,6 +398,9 @@ class NanaBananaAdapter(ImageModelAdapter):
                 tasks.append((i, asyncio.to_thread(self._process_and_save_single, i, data, output_dir, config)))
 
         for i, task in tasks:
-            generated_paths[i] = await task
+            try:
+                generated_paths[i] = await task
+            except Exception as e:
+                print(f"[SaveAsync] Image {i} save failed: {e}")
 
         return generated_paths

@@ -139,11 +139,17 @@ async def generate_sketches(request: GenerateRequest):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        error_str = str(e).lower()
+        print(f"[Generate] Error: {e}")  # Log real error server-side
+        if '429' in error_str or 'rate' in error_str or 'quota' in error_str or 'busy' in error_str:
+            friendly = "The server is busy. Please wait a moment and try again."
+        else:
+            friendly = "Something went wrong during generation. Please try again."
         return {
             "success": False,
             "error": {
                 "code": "GENERATION_ERROR",
-                "message": str(e)
+                "message": friendly
             }
         }
 
@@ -178,7 +184,13 @@ async def generate_sketches_stream(request: GenerateRequest):
             _prune_generations(request.styleId)
 
         except Exception as e:
-            yield f"event: error\ndata: {json.dumps({'message': str(e)})}\n\n"
+            error_str = str(e).lower()
+            print(f"[Generate-Stream] Error: {e}")  # Log real error server-side
+            if '429' in error_str or 'rate' in error_str or 'quota' in error_str or 'busy' in error_str:
+                friendly = "The server is busy. Please wait a moment and try again."
+            else:
+                friendly = "Something went wrong during generation. Please try again."
+            yield f"event: error\ndata: {json.dumps({'message': friendly})}\n\n"
 
     return StreamingResponse(
         event_generator(),
@@ -292,10 +304,72 @@ def refine_sketches(request: RefineRequest):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        error_str = str(e).lower()
+        print(f"[Refine] Error: {e}")  # Log real error server-side
+        if '429' in error_str or 'rate' in error_str or 'quota' in error_str or 'busy' in error_str:
+            friendly = "The server is busy. Please wait a moment and try again."
+        else:
+            friendly = "Something went wrong during refinement. Please try again."
         return {
             "success": False,
             "error": {
                 "code": "REFINE_ERROR",
-                "message": str(e)
+                "message": friendly
             }
         }
+
+
+@router.post("/refine-stream")
+async def refine_sketches_stream(request: RefineRequest):
+    """
+    SSE streaming refine endpoint — yields events as each refined image completes.
+
+    Events:
+      event: progress  — retry notifications
+      event: image     — an individual refined sketch is ready
+      event: complete  — all images done
+      event: error     — something went wrong
+    """
+    if not request.refinePrompt or not request.refinePrompt.strip():
+        raise HTTPException(status_code=400, detail="Refine prompt cannot be empty")
+
+    if not request.selectedImagePaths:
+        raise HTTPException(status_code=400, detail="At least one image must be selected")
+
+    # Resolve relative URLs to absolute filesystem paths
+    resolved_paths = []
+    for rel_url in request.selectedImagePaths:
+        resolved_paths.append(_resolve_image_path(rel_url))
+
+    service = PipelineService()
+
+    async def event_generator():
+        try:
+            async for event in service.refine_streaming(
+                refine_prompt=request.refinePrompt,
+                selected_image_paths=resolved_paths,
+                style_id=request.styleId,
+                session_id=request.sessionId
+            ):
+                yield f"event: {event['event']}\ndata: {json.dumps(event['data'])}\n\n"
+
+            _prune_generations(request.styleId)
+
+        except Exception as e:
+            error_str = str(e).lower()
+            print(f"[Refine-Stream] Error: {e}")
+            if '429' in error_str or 'rate' in error_str or 'quota' in error_str or 'busy' in error_str:
+                friendly = "The server is busy. Please wait a moment and try again."
+            else:
+                friendly = "Something went wrong during refinement. Please try again."
+            yield f"event: error\ndata: {json.dumps({'message': friendly})}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )

@@ -16,8 +16,8 @@ interface UseImageLoadResult {
 
 export function useImageLoad({
   src,
-  maxRetries = 1,
-  retryDelayMs = 1500,
+  maxRetries = 3,
+  retryDelayMs = 2000,
 }: UseImageLoadOptions): UseImageLoadResult {
   const [isLoading, setIsLoading] = useState(!!src);
   const [hasError, setHasError] = useState(false);

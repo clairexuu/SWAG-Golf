@@ -185,7 +185,8 @@ class ImageGenerator:
         prompt_spec: PromptSpec,
         retrieval_result: RetrievalResult,
         style,
-        config: Optional[GenerationConfig] = None
+        config: Optional[GenerationConfig] = None,
+        on_retry=None
     ) -> AsyncGenerator[Tuple[int, Optional[str], Optional[str]], None]:
         """Async streaming generator that yields (index, image_path, error) as each image completes."""
         if config is None:
@@ -198,7 +199,31 @@ class ImageGenerator:
             style=style
         )
 
-        async for idx, path, error in self.adapter.generate_streaming_async(payload):
+        async for idx, path, error in self.adapter.generate_streaming_async(payload, on_retry=on_retry):
+            yield (idx, path, error)
+
+    async def refine_streaming_async(
+        self,
+        refine_prompt: str,
+        original_context: str,
+        refine_history: List[str],
+        source_image_paths: List[str],
+        style,
+        config: Optional[GenerationConfig] = None,
+        on_retry=None
+    ) -> AsyncGenerator[Tuple[int, Optional[str], Optional[str]], None]:
+        """Async streaming refine that yields (index, image_path, error) as each image completes."""
+        if config is None:
+            config = GenerationConfig(num_images=len(source_image_paths))
+
+        async for idx, path, error in self.adapter.refine_streaming_async(
+            refine_prompt=refine_prompt,
+            original_context=original_context,
+            refine_history=refine_history,
+            source_image_paths=source_image_paths,
+            config=config,
+            on_retry=on_retry
+        ):
             yield (idx, path, error)
 
     def refine(

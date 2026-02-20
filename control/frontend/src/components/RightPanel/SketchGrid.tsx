@@ -13,6 +13,7 @@ interface SketchGridProps {
   sketches: Sketch[];
   isGenerating: boolean;
   isRestarting?: boolean;
+  serverBusy?: boolean;
   refiningIndices?: Set<number>;
   error: string | null;
   errorCode?: string | null;
@@ -25,7 +26,7 @@ interface SketchGridProps {
   onToggleSelect?: (index: number) => void;
 }
 
-export default function SketchGrid({ sketches, isGenerating, isRestarting, refiningIndices, error, errorCode, onImageClick, onCancel, onRetry, onRestart, selectionMode, selectedIndices, onToggleSelect }: SketchGridProps) {
+export default function SketchGrid({ sketches, isGenerating, isRestarting, serverBusy, refiningIndices, error, errorCode, onImageClick, onCancel, onRetry, onRestart, selectionMode, selectedIndices, onToggleSelect }: SketchGridProps) {
   const isActive = isGenerating || (refiningIndices != null && refiningIndices.size > 0);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
@@ -79,8 +80,9 @@ export default function SketchGrid({ sketches, isGenerating, isRestarting, refin
     window.URL.revokeObjectURL(url);
   };
 
-  // Error state
-  if (error) {
+  // Full-screen error state — only when no successful images exist
+  const hasAnyImage = sketches.some(s => s.imagePath !== null);
+  if (error && !hasAnyImage) {
     const isBackendError = errorCode === 'BACKEND_UNAVAILABLE';
     const displayMessage = isBackendError
       ? 'The generation service is temporarily unavailable. You can try again or restart the service.'
@@ -89,7 +91,7 @@ export default function SketchGrid({ sketches, isGenerating, isRestarting, refin
     return (
       <EmptyState
         icon={<ErrorCircleIcon className="w-16 h-16 text-swag-pink" />}
-        title="Generation Failed"
+        title="Unable to Generate"
         description={displayMessage}
         action={
           <div className="flex flex-col items-center gap-3">
@@ -218,6 +220,11 @@ export default function SketchGrid({ sketches, isGenerating, isRestarting, refin
           <p className="text-swag-white text-sm font-medium animate-pulse">
             Generating sketches... ({sketches.filter(s => s.imagePath).length}/{sketches.length}) — {elapsedSeconds}s elapsed
           </p>
+          {serverBusy && (
+            <p className="text-amber-400 text-xs font-medium mt-1">
+              Server is busy — retrying, generation may take longer
+            </p>
+          )}
           <button
             onClick={onCancel}
             className="px-4 py-1.5 text-xs uppercase tracking-wider mt-2 rounded bg-red-600 hover:bg-red-700 text-white font-medium transition-colors"
@@ -229,6 +236,11 @@ export default function SketchGrid({ sketches, isGenerating, isRestarting, refin
       {refiningIndices && refiningIndices.size > 0 && (
         <div className="absolute bottom-0 left-0 right-0 text-center py-3 bg-gradient-to-t from-black/80 to-transparent">
           <p className="text-swag-white text-sm font-medium animate-pulse">Refining {refiningIndices.size} sketch{refiningIndices.size > 1 ? 'es' : ''}... — {elapsedSeconds}s elapsed</p>
+          {serverBusy && (
+            <p className="text-amber-400 text-xs font-medium mt-1">
+              Server is busy — retrying, generation may take longer
+            </p>
+          )}
           <button
             onClick={onCancel}
             className="px-4 py-1.5 text-xs uppercase tracking-wider mt-2 rounded bg-red-600 hover:bg-red-700 text-white font-medium transition-colors"

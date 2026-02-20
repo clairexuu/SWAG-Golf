@@ -18,3 +18,4 @@ design_doc/Progress.md
 test_pipeline.py
 .code-hash
 .gitignore
+python-backend.log

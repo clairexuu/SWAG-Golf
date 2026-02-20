@@ -18,7 +18,7 @@ const getImageUrl = (imagePath: string) => `${API_BASE_URL}${imagePath}`;
 
 export default function StudioPage() {
   const { selectedStyleId, selectStyle } = useStyleContext();
-  const { generate, refine, cancel, isGenerating, isRestarting, refiningIndices, error, errorCode, sketches, clearSketches, retry, restartAndRetry } = useGenerationContext();
+  const { generate, refine, cancel, isGenerating, isRestarting, serverBusy, refiningIndices, error, errorCode, sketches, clearSketches, retry, restartAndRetry } = useGenerationContext();
   const { collapsed: sidebarCollapsed, toggle: toggleSidebar } = useSidebar();
   const toast = useToast();
 
@@ -244,6 +244,7 @@ export default function StudioPage() {
           sketches={sketches}
           isGenerating={isGenerating}
           isRestarting={isRestarting}
+          serverBusy={serverBusy}
           refiningIndices={refiningIndices}
           error={error}
           errorCode={errorCode}

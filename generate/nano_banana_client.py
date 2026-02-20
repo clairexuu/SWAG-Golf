@@ -216,14 +216,20 @@ IMPORTANT OUTPUT REQUIREMENTS:
                                         return img_bytes
                                     else:
                                         print(f"Warning: Invalid image format in response for iteration {index+1} (magic: {img_bytes[:4].hex() if len(img_bytes) >= 4 else 'too short'})")
-                        raise RuntimeError(f"Gemini returned no image data for image {index+1}")
+                        raise RuntimeError(f"Image generation returned an incomplete result")
                     else:
-                        raise RuntimeError(f"Gemini returned no content for image {index+1}")
+                        raise RuntimeError(f"Image generation returned an incomplete result")
                 else:
-                    raise RuntimeError(f"Gemini returned no candidates for image {index+1} - may have been blocked by safety filters")
+                    raise RuntimeError(f"Image was blocked by content filters")
 
-            except RuntimeError:
-                raise  # Don't retry our own errors from response validation above
+            except RuntimeError as e:
+                # Response validation failures — retry them too
+                if attempt < max_retries - 1:
+                    wait = 2 ** attempt
+                    print(f"Image {index+1}: incomplete response (attempt {attempt+1}/{max_retries}), retrying in {wait}s...")
+                    time.sleep(wait)
+                    continue
+                raise  # Final attempt exhausted
 
             except Exception as e:
                 error_msg = str(e)
@@ -236,9 +242,9 @@ IMPORTANT OUTPUT REQUIREMENTS:
                     continue
 
                 if '429' in error_msg or 'quota' in error_msg.lower():
-                    raise RuntimeError(f"API quota exceeded for image {index+1}. Check quota at https://ai.dev/rate-limit")
+                    raise RuntimeError(f"The server is busy. Please wait a moment and try again.")
                 else:
-                    raise RuntimeError(f"Failed to generate image {index+1}: {e}")
+                    raise RuntimeError(f"Image generation was unsuccessful")
 
     def refine(
         self,
@@ -311,7 +317,7 @@ Output a single modified sketch. GRAYSCALE ONLY — no color.
             # Mark images that failed to load
             for i, img_bytes in enumerate(source_image_bytes_list):
                 if img_bytes is None:
-                    errors[i] = f"Failed to load source image: {source_images[i]}"
+                    errors[i] = f"Could not load the source image for refinement"
 
             for future in as_completed(futures):
                 idx = futures[future]
@@ -383,14 +389,20 @@ Output a single modified sketch. GRAYSCALE ONLY — no color.
                                         return img_bytes
                                     else:
                                         print(f"Warning: Invalid image format in refine response {index+1}")
-                        raise RuntimeError(f"Gemini returned no image data for refine {index+1}")
+                        raise RuntimeError(f"Image generation returned an incomplete result")
                     else:
-                        raise RuntimeError(f"Gemini returned no content for refine {index+1}")
+                        raise RuntimeError(f"Image generation returned an incomplete result")
                 else:
-                    raise RuntimeError(f"Gemini returned no candidates for refine {index+1}")
+                    raise RuntimeError(f"Image was blocked by content filters")
 
-            except RuntimeError:
-                raise
+            except RuntimeError as e:
+                # Response validation failures — retry them too
+                if attempt < max_retries - 1:
+                    wait = 2 ** attempt
+                    print(f"Refine {index+1}: incomplete response (attempt {attempt+1}/{max_retries}), retrying in {wait}s...")
+                    time.sleep(wait)
+                    continue
+                raise  # Final attempt exhausted
 
             except Exception as e:
                 error_msg = str(e)
@@ -403,14 +415,14 @@ Output a single modified sketch. GRAYSCALE ONLY — no color.
                     continue
 
                 if '429' in error_msg or 'quota' in error_msg.lower():
-                    raise RuntimeError(f"API quota exceeded for refine {index+1}. Check quota at https://ai.dev/rate-limit")
+                    raise RuntimeError(f"The server is busy. Please wait a moment and try again.")
                 else:
-                    raise RuntimeError(f"Failed to refine image {index+1}: {e}")
+                    raise RuntimeError(f"Image refinement was unsuccessful")
 
     # ── Async methods ──────────────────────────────────────────────────
 
     @staticmethod
-    def _extract_image_bytes(response) -> bytes:
+    def _extract_image_bytes(response) -> bytes:      
         """Extract image bytes from a Gemini response. Shared by sync and async paths."""
         if response.candidates and len(response.candidates) > 0:
             candidate = response.candidates[0]
@@ -425,11 +437,11 @@ Output a single modified sketch. GRAYSCALE ONLY — no color.
                         if img_bytes and isinstance(img_bytes, bytes):
                             if img_bytes.startswith(b'\x89PNG') or img_bytes.startswith(b'\xff\xd8\xff'):
                                 return img_bytes
-                raise RuntimeError("Gemini returned no image data")
+                raise RuntimeError("Image generation returned an incomplete result")
             else:
-                raise RuntimeError("Gemini returned no content")
+                raise RuntimeError("Image generation returned an incomplete result")
         else:
-            raise RuntimeError("Gemini returned no candidates - may have been blocked by safety filters")
+            raise RuntimeError("Image was blocked by content filters")
 
     async def _generate_single_image_async(
         self,
@@ -438,7 +450,8 @@ Output a single modified sketch. GRAYSCALE ONLY — no color.
         aspect_ratio: str,
         image_size: str,
         temperature: float,
-        index: int
+        index: int,
+        on_retry=None
     ) -> Tuple[int, bytes]:
         """Generate a single image via the async Gemini API. Returns (index, image_bytes)."""
         max_retries = 3
@@ -462,8 +475,16 @@ Output a single modified sketch. GRAYSCALE ONLY — no color.
                 )
                 return index, self._extract_image_bytes(response)
 
-            except RuntimeError:
-                raise
+            except RuntimeError as e:
+                # Response validation failures — retry them too
+                if attempt < max_retries - 1:
+                    wait = 2 ** attempt
+                    print(f"Image {index+1}: incomplete response (attempt {attempt+1}/{max_retries}), retrying in {wait}s...")
+                    if on_retry:
+                        on_retry(index, attempt + 1, max_retries)
+                    await asyncio.sleep(wait)
+                    continue
+                raise  # Final attempt exhausted
 
             except Exception as e:
                 error_msg = str(e)
@@ -471,12 +492,14 @@ Output a single modified sketch. GRAYSCALE ONLY — no color.
                 if is_retryable and attempt < max_retries - 1:
                     wait = 2 ** attempt
                     print(f"Warning: Image {index+1} got transient error (attempt {attempt+1}/{max_retries}), retrying in {wait}s...")
+                    if on_retry:
+                        on_retry(index, attempt + 1, max_retries)
                     await asyncio.sleep(wait)
                     continue
                 if '429' in error_msg or 'quota' in error_msg.lower():
-                    raise RuntimeError(f"API quota exceeded for image {index+1}. Check quota at https://ai.dev/rate-limit")
+                    raise RuntimeError(f"The server is busy. Please wait a moment and try again.")
                 else:
-                    raise RuntimeError(f"Failed to generate image {index+1}: {e}")
+                    raise RuntimeError(f"Image generation was unsuccessful")
 
     async def generate_async(
         self,
@@ -545,7 +568,8 @@ IMPORTANT OUTPUT REQUIREMENTS:
         aspect_ratio: str = "9:16",
         image_size: str = "1K",
         seed: Optional[int] = None,
-        temperature: float = 0.8
+        temperature: float = 0.8,
+        on_retry=None
     ) -> AsyncGenerator[Tuple[int, Optional[bytes], Optional[str]], None]:
         """Async streaming generator that yields (index, image_bytes, error) as each image completes."""
         valid_ref_paths = []
@@ -577,7 +601,8 @@ IMPORTANT OUTPUT REQUIREMENTS:
         async def _tracked_generate(i: int):
             try:
                 return await self._generate_single_image_async(
-                    enhanced_prompt, ref_image_bytes, aspect_ratio, image_size, temperature, i
+                    enhanced_prompt, ref_image_bytes, aspect_ratio, image_size, temperature, i,
+                    on_retry=on_retry
                 )
             except Exception as e:
                 return (i, e)
@@ -588,6 +613,128 @@ IMPORTANT OUTPUT REQUIREMENTS:
             idx, result = await coro
             if isinstance(result, Exception):
                 print(f"Image {idx+1} failed: {result}")
+                yield (idx, None, str(result))
+            else:
+                yield (idx, result, None)
+
+    async def _refine_single_image_async(
+        self,
+        enhanced_prompt: str,
+        source_image_bytes: bytes,
+        aspect_ratio: str,
+        temperature: float,
+        index: int,
+        on_retry=None
+    ) -> Tuple[int, bytes]:
+        """Refine a single image via the async Gemini API. Returns (index, image_bytes)."""
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                source_img = Image.open(BytesIO(source_image_bytes))
+                contents = [enhanced_prompt, source_img]
+
+                response = await self.client.aio.models.generate_content(
+                    model=self.model_name,
+                    contents=contents,
+                    config=types.GenerateContentConfig(
+                        systemInstruction=REFINE_SYSTEM_PROMPT,
+                        responseModalities=["IMAGE", "TEXT"],
+                        temperature=temperature,
+                        imageConfig=types.ImageConfig(
+                            aspectRatio=aspect_ratio,
+                            imageSize="1K"
+                        )
+                    )
+                )
+                return index, self._extract_image_bytes(response)
+
+            except RuntimeError as e:
+                if attempt < max_retries - 1:
+                    wait = 2 ** attempt
+                    print(f"Refine {index+1}: incomplete response (attempt {attempt+1}/{max_retries}), retrying in {wait}s...")
+                    if on_retry:
+                        on_retry(index, attempt + 1, max_retries)
+                    await asyncio.sleep(wait)
+                    continue
+                raise
+
+            except Exception as e:
+                error_msg = str(e)
+                is_retryable = '503' in error_msg or '429' in error_msg or 'unavailable' in error_msg.lower()
+                if is_retryable and attempt < max_retries - 1:
+                    wait = 2 ** attempt
+                    print(f"Warning: Refine {index+1} got transient error (attempt {attempt+1}/{max_retries}), retrying in {wait}s...")
+                    if on_retry:
+                        on_retry(index, attempt + 1, max_retries)
+                    await asyncio.sleep(wait)
+                    continue
+                if '429' in error_msg or 'quota' in error_msg.lower():
+                    raise RuntimeError(f"The server is busy. Please wait a moment and try again.")
+                else:
+                    raise RuntimeError(f"Image refinement was unsuccessful")
+
+    async def refine_streaming_async(
+        self,
+        refine_prompt: str,
+        original_context: str,
+        refine_history: List[str],
+        source_images: List[str],
+        aspect_ratio: str = "9:16",
+        temperature: float = 0.6,
+        on_retry=None
+    ) -> AsyncGenerator[Tuple[int, Optional[bytes], Optional[str]], None]:
+        """Async streaming refine that yields (index, image_bytes, error) as each image completes."""
+        # Build refine-specific enhanced prompt
+        history_section = ""
+        if refine_history:
+            items = "\n".join(f"  {i+1}. {h}" for i, h in enumerate(refine_history))
+            history_section = f"\nPREVIOUS REFINEMENTS ALREADY APPLIED:\n{items}\n"
+
+        enhanced_prompt = f"""EXISTING SKETCH: The attached image is the sketch to modify.
+
+ORIGINAL DESIGN CONTEXT: {original_context}
+{history_section}
+CURRENT MODIFICATION INSTRUCTIONS: {refine_prompt}
+
+Apply ONLY the current modification instructions to the existing sketch.
+{("The sketch may already reflect previous refinements — do not undo them." if refine_history else "")}
+Output a single modified sketch. GRAYSCALE ONLY — no color.
+"""
+
+        # Pre-load each source image as bytes
+        source_image_bytes_list = []
+        for p in source_images:
+            try:
+                with open(p, 'rb') as f:
+                    source_image_bytes_list.append(f.read())
+            except Exception as e:
+                print(f"Warning: Failed to load source image {p}: {e}")
+                source_image_bytes_list.append(None)
+
+        num_images = len(source_images)
+        print(f"Refining {num_images} image(s) in parallel (async streaming)...")
+
+        async def _tracked_refine(i: int):
+            try:
+                return await self._refine_single_image_async(
+                    enhanced_prompt, source_image_bytes_list[i], aspect_ratio, temperature, i,
+                    on_retry=on_retry
+                )
+            except Exception as e:
+                return (i, e)
+
+        tasks = []
+        for i, img_bytes in enumerate(source_image_bytes_list):
+            if img_bytes is None:
+                # Yield error immediately for images that failed to load
+                yield (i, None, "Could not load the source image for refinement")
+            else:
+                tasks.append(asyncio.create_task(_tracked_refine(i)))
+
+        for coro in asyncio.as_completed(tasks):
+            idx, result = await coro
+            if isinstance(result, Exception):
+                print(f"Refine image {idx+1} failed: {result}")
                 yield (idx, None, str(result))
             else:
                 yield (idx, result, None)
