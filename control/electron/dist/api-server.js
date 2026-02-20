@@ -286,6 +286,72 @@ router.post("/refine", async (req, res) => {
     });
   }
 });
+router.post("/refine-stream", async (req, res) => {
+  const abortController = new AbortController();
+  res.on("close", () => abortController.abort());
+  try {
+    const { refinePrompt, selectedImagePaths, styleId } = req.body;
+    if (!refinePrompt || !selectedImagePaths?.length || !styleId) {
+      return res.status(400).json({
+        success: false,
+        error: { code: "INVALID_REQUEST", message: "Missing required fields: refinePrompt, selectedImagePaths, and styleId are required" }
+      });
+    }
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+      "X-Accel-Buffering": "no"
+    });
+    const pythonRes = await fetch(`${PYTHON_API_URL}/refine-stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req.body),
+      signal: abortController.signal
+    });
+    if (!pythonRes.ok || !pythonRes.body) {
+      res.write(`event: error
+data: ${JSON.stringify({ message: "Backend unavailable" })}
+
+`);
+      res.end();
+      return;
+    }
+    const reader = pythonRes.body.getReader();
+    const decoder = new TextDecoder();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done)
+          break;
+        res.write(decoder.decode(value, { stream: true }));
+      }
+    } catch (err) {
+      if (err.name !== "AbortError") {
+        res.write(`event: error
+data: ${JSON.stringify({ message: "Stream interrupted" })}
+
+`);
+      }
+    }
+    res.end();
+  } catch (err) {
+    if (err.name === "AbortError")
+      return;
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        error: { code: "STREAM_ERROR", message: err instanceof Error ? err.message : "Unknown error" }
+      });
+    } else {
+      res.write(`event: error
+data: ${JSON.stringify({ message: "Backend unavailable" })}
+
+`);
+      res.end();
+    }
+  }
+});
 var generate_default = router;
 
 // ../api/src/routes/styles.ts

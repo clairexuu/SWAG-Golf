@@ -1,6 +1,10 @@
 # Release History
 
-## v1.0.2 - Fix Known Issues + Generation Speed Optimization
+## v1.0.3 - Fix Sketch Refinement
+
+- Fixed sketch refinement not working
+
+## v1.0.2 - Fix Known Issues + Generation Speed Optimization + Error and Retry Optimization
 
 - Fixed Generation in Processing Rendering
 - Fixed Image loading issues
