@@ -28,6 +28,7 @@ interface SketchGridProps {
 
 export default function SketchGrid({ sketches, isGenerating, isRestarting, serverBusy, refiningIndices, error, errorCode, onImageClick, onCancel, onRetry, onRestart, selectionMode, selectedIndices, onToggleSelect }: SketchGridProps) {
   const isActive = isGenerating || (refiningIndices != null && refiningIndices.size > 0);
+  const availableCount = sketches.filter(s => s.imagePath).length;
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   useEffect(() => {
@@ -186,10 +187,15 @@ export default function SketchGrid({ sketches, isGenerating, isRestarting, serve
         </div>
         <button
           onClick={handleDownloadAll}
-          className="flex items-center gap-1.5 btn-ghost text-xs uppercase tracking-wider"
+          disabled={availableCount === 0}
+          className={`flex items-center gap-1.5 btn-ghost text-xs uppercase tracking-wider ${
+            availableCount === 0 ? 'opacity-40 cursor-not-allowed' : ''
+          }`}
         >
           <DownloadIcon className="w-3.5 h-3.5" />
-          Download All
+          {isActive && availableCount < sketches.length
+            ? `Download ${availableCount} Ready`
+            : 'Download All'}
         </button>
       </div>
 
@@ -207,6 +213,7 @@ export default function SketchGrid({ sketches, isGenerating, isRestarting, serve
               sketch={sketch}
               onExpand={() => onImageClick(index)}
               onDownload={() => handleDownload(sketch)}
+              isGenerating={isActive}
               selectionMode={selectionMode}
               isSelected={selectedIndices?.has(index)}
               onToggleSelect={() => onToggleSelect?.(index)}
@@ -216,7 +223,7 @@ export default function SketchGrid({ sketches, isGenerating, isRestarting, serve
       </div>
       {/* Generating status during SSE streaming */}
       {isGenerating && (!refiningIndices || refiningIndices.size === 0) && (
-        <div className="absolute bottom-0 left-0 right-0 text-center py-3 bg-gradient-to-t from-black/80 to-transparent">
+        <div className="absolute bottom-0 left-0 right-0 text-center py-3 bg-gradient-to-t from-black/80 to-transparent pointer-events-none">
           <p className="text-swag-white text-sm font-medium animate-pulse">
             Generating sketches... ({sketches.filter(s => s.imagePath).length}/{sketches.length}) — {elapsedSeconds}s elapsed
           </p>
@@ -227,14 +234,14 @@ export default function SketchGrid({ sketches, isGenerating, isRestarting, serve
           )}
           <button
             onClick={onCancel}
-            className="px-4 py-1.5 text-xs uppercase tracking-wider mt-2 rounded bg-red-600 hover:bg-red-700 text-white font-medium transition-colors"
+            className="px-4 py-1.5 text-xs uppercase tracking-wider mt-2 rounded bg-red-600 hover:bg-red-700 text-white font-medium transition-colors pointer-events-auto"
           >
             Cancel
           </button>
         </div>
       )}
       {refiningIndices && refiningIndices.size > 0 && (
-        <div className="absolute bottom-0 left-0 right-0 text-center py-3 bg-gradient-to-t from-black/80 to-transparent">
+        <div className="absolute bottom-0 left-0 right-0 text-center py-3 bg-gradient-to-t from-black/80 to-transparent pointer-events-none">
           <p className="text-swag-white text-sm font-medium animate-pulse">Refining {refiningIndices.size} sketch{refiningIndices.size > 1 ? 'es' : ''}... — {elapsedSeconds}s elapsed</p>
           {serverBusy && (
             <p className="text-amber-400 text-xs font-medium mt-1">
@@ -243,7 +250,7 @@ export default function SketchGrid({ sketches, isGenerating, isRestarting, serve
           )}
           <button
             onClick={onCancel}
-            className="px-4 py-1.5 text-xs uppercase tracking-wider mt-2 rounded bg-red-600 hover:bg-red-700 text-white font-medium transition-colors"
+            className="px-4 py-1.5 text-xs uppercase tracking-wider mt-2 rounded bg-red-600 hover:bg-red-700 text-white font-medium transition-colors pointer-events-auto"
           >
             Cancel
           </button>

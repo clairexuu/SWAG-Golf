@@ -6,6 +6,7 @@ import asyncio
 import os
 import time
 import base64
+import random
 from io import BytesIO
 from typing import AsyncGenerator, List, Optional, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -49,7 +50,7 @@ SYSTEM_PROMPT = """You are a sketch assistant creating mascot/character patterns
 
 
 class NanaBananaClient:
-    """Client for Google Gemini image generation (gemini-2.5-flash-image)."""
+    """Client for Google Gemini image generation."""
 
     def __init__(self, api_key: Optional[str] = None, model_name: Optional[str] = None):
         """
@@ -57,10 +58,10 @@ class NanaBananaClient:
 
         Args:
             api_key: Google API key (defaults to GOOGLE_API_KEY env var)
-            model_name: Model name (defaults to GEMINI_MODEL env var or gemini-2.5-flash-image)
+            model_name: Model name (defaults to GEMINI_MODEL env var or gemini-3-pro-image-preview)
         """
         self.api_key = api_key or os.getenv("GOOGLE_API_KEY") or os.getenv("NANO_BANANA_API_KEY")
-        self.model_name = model_name or os.getenv("GEMINI_MODEL", "gemini-2.5-flash-image")
+        self.model_name = model_name or os.getenv("GEMINI_MODEL", "gemini-3-pro-image-preview")
 
         if not self.api_key:
             raise ValueError("GOOGLE_API_KEY not found in environment")
@@ -124,17 +125,18 @@ IMPORTANT OUTPUT REQUIREMENTS:
             with open(p, 'rb') as f:
                 ref_image_bytes.append(f.read())
 
-        # Generate all images in parallel using threads
+        # Generate all images in parallel using threads, staggered to avoid rate limits
         # Each thread creates its own PIL Image from pre-loaded bytes (thread-safe)
         print(f"Generating {num_images} images in parallel...")
         with ThreadPoolExecutor(max_workers=num_images) as executor:
-            futures = {
-                executor.submit(
+            futures = {}
+            for i in range(num_images):
+                if i > 0:
+                    time.sleep(0.3)
+                futures[executor.submit(
                     self._generate_single_image,
                     enhanced_prompt, ref_image_bytes, aspect_ratio, image_size, temperature, i
-                ): i
-                for i in range(num_images)
-            }
+                )] = i
             results = [None] * num_images
             errors = [None] * num_images
             for future in as_completed(futures):
@@ -225,23 +227,27 @@ IMPORTANT OUTPUT REQUIREMENTS:
             except RuntimeError as e:
                 # Response validation failures — retry them too
                 if attempt < max_retries - 1:
-                    wait = 2 ** attempt
-                    print(f"Image {index+1}: incomplete response (attempt {attempt+1}/{max_retries}), retrying in {wait}s...")
+                    wait = 2 ** attempt + random.uniform(0, 1)
+                    print(f"Image {index+1}: incomplete response (attempt {attempt+1}/{max_retries}), retrying in {wait:.1f}s...")
                     time.sleep(wait)
                     continue
                 raise  # Final attempt exhausted
 
             except Exception as e:
                 error_msg = str(e)
-                is_retryable = '503' in error_msg or '429' in error_msg or 'unavailable' in error_msg.lower()
+                is_429 = '429' in error_msg or 'quota' in error_msg.lower()
+                is_retryable = is_429 or '503' in error_msg or 'unavailable' in error_msg.lower()
 
                 if is_retryable and attempt < max_retries - 1:
-                    wait = 2 ** attempt  # 1s, 2s, 4s
-                    print(f"Warning: Image {index+1} got transient error (attempt {attempt+1}/{max_retries}), retrying in {wait}s...")
+                    if is_429:
+                        wait = 5 * (2 ** attempt) + random.uniform(0, 2)  # ~5s, ~12s, ~22s
+                    else:
+                        wait = 2 ** attempt + random.uniform(0, 1)        # ~1s, ~3s, ~5s
+                    print(f"Warning: Image {index+1} got transient error (attempt {attempt+1}/{max_retries}), retrying in {wait:.1f}s...")
                     time.sleep(wait)
                     continue
 
-                if '429' in error_msg or 'quota' in error_msg.lower():
+                if is_429:
                     raise RuntimeError(f"The server is busy. Please wait a moment and try again.")
                 else:
                     raise RuntimeError(f"Image generation was unsuccessful")
@@ -303,13 +309,17 @@ Output a single modified sketch. GRAYSCALE ONLY — no color.
 
         with ThreadPoolExecutor(max_workers=max(num_images, 1)) as executor:
             futures = {}
+            stagger_idx = 0
             for i, img_bytes in enumerate(source_image_bytes_list):
                 if img_bytes is None:
                     continue
+                if stagger_idx > 0:
+                    time.sleep(0.3)
                 futures[executor.submit(
                     self._generate_single_image_refine,
                     enhanced_prompt, img_bytes, aspect_ratio, temperature, i
                 )] = i
+                stagger_idx += 1
 
             results = [None] * num_images
             errors = [None] * num_images
@@ -398,23 +408,27 @@ Output a single modified sketch. GRAYSCALE ONLY — no color.
             except RuntimeError as e:
                 # Response validation failures — retry them too
                 if attempt < max_retries - 1:
-                    wait = 2 ** attempt
-                    print(f"Refine {index+1}: incomplete response (attempt {attempt+1}/{max_retries}), retrying in {wait}s...")
+                    wait = 2 ** attempt + random.uniform(0, 1)
+                    print(f"Refine {index+1}: incomplete response (attempt {attempt+1}/{max_retries}), retrying in {wait:.1f}s...")
                     time.sleep(wait)
                     continue
                 raise  # Final attempt exhausted
 
             except Exception as e:
                 error_msg = str(e)
-                is_retryable = '503' in error_msg or '429' in error_msg or 'unavailable' in error_msg.lower()
+                is_429 = '429' in error_msg or 'quota' in error_msg.lower()
+                is_retryable = is_429 or '503' in error_msg or 'unavailable' in error_msg.lower()
 
                 if is_retryable and attempt < max_retries - 1:
-                    wait = 2 ** attempt
-                    print(f"Warning: Refine {index+1} got transient error (attempt {attempt+1}/{max_retries}), retrying in {wait}s...")
+                    if is_429:
+                        wait = 5 * (2 ** attempt) + random.uniform(0, 2)  # ~5s, ~12s, ~22s
+                    else:
+                        wait = 2 ** attempt + random.uniform(0, 1)        # ~1s, ~3s, ~5s
+                    print(f"Warning: Refine {index+1} got transient error (attempt {attempt+1}/{max_retries}), retrying in {wait:.1f}s...")
                     time.sleep(wait)
                     continue
 
-                if '429' in error_msg or 'quota' in error_msg.lower():
+                if is_429:
                     raise RuntimeError(f"The server is busy. Please wait a moment and try again.")
                 else:
                     raise RuntimeError(f"Image refinement was unsuccessful")
@@ -478,8 +492,8 @@ Output a single modified sketch. GRAYSCALE ONLY — no color.
             except RuntimeError as e:
                 # Response validation failures — retry them too
                 if attempt < max_retries - 1:
-                    wait = 2 ** attempt
-                    print(f"Image {index+1}: incomplete response (attempt {attempt+1}/{max_retries}), retrying in {wait}s...")
+                    wait = 2 ** attempt + random.uniform(0, 1)
+                    print(f"Image {index+1}: incomplete response (attempt {attempt+1}/{max_retries}), retrying in {wait:.1f}s...")
                     if on_retry:
                         on_retry(index, attempt + 1, max_retries)
                     await asyncio.sleep(wait)
@@ -488,15 +502,19 @@ Output a single modified sketch. GRAYSCALE ONLY — no color.
 
             except Exception as e:
                 error_msg = str(e)
-                is_retryable = '503' in error_msg or '429' in error_msg or 'unavailable' in error_msg.lower()
+                is_429 = '429' in error_msg or 'quota' in error_msg.lower()
+                is_retryable = is_429 or '503' in error_msg or 'unavailable' in error_msg.lower()
                 if is_retryable and attempt < max_retries - 1:
-                    wait = 2 ** attempt
-                    print(f"Warning: Image {index+1} got transient error (attempt {attempt+1}/{max_retries}), retrying in {wait}s...")
+                    if is_429:
+                        wait = 5 * (2 ** attempt) + random.uniform(0, 2)  # ~5s, ~12s, ~22s
+                    else:
+                        wait = 2 ** attempt + random.uniform(0, 1)        # ~1s, ~3s, ~5s
+                    print(f"Warning: Image {index+1} got transient error (attempt {attempt+1}/{max_retries}), retrying in {wait:.1f}s...")
                     if on_retry:
                         on_retry(index, attempt + 1, max_retries)
                     await asyncio.sleep(wait)
                     continue
-                if '429' in error_msg or 'quota' in error_msg.lower():
+                if is_429:
                     raise RuntimeError(f"The server is busy. Please wait a moment and try again.")
                 else:
                     raise RuntimeError(f"Image generation was unsuccessful")
@@ -537,12 +555,16 @@ IMPORTANT OUTPUT REQUIREMENTS:
                 ref_image_bytes.append(f.read())
 
         print(f"Generating {num_images} images in parallel (async)...")
-        tasks = [
-            self._generate_single_image_async(
+
+        # Stagger requests to avoid hitting rate limits with simultaneous calls
+        async def _staggered(i):
+            if i > 0:
+                await asyncio.sleep(0.3 * i)
+            return await self._generate_single_image_async(
                 enhanced_prompt, ref_image_bytes, aspect_ratio, image_size, temperature, i
             )
-            for i in range(num_images)
-        ]
+
+        tasks = [_staggered(i) for i in range(num_images)]
         settled = await asyncio.gather(*tasks, return_exceptions=True)
 
         results: List[Optional[bytes]] = [None] * num_images
@@ -607,14 +629,21 @@ IMPORTANT OUTPUT REQUIREMENTS:
             except Exception as e:
                 return (i, e)
 
-        tasks = [asyncio.create_task(_tracked_generate(i)) for i in range(num_images)]
+        # Stagger task creation to avoid hitting rate limits with simultaneous requests
+        tasks = []
+        for i in range(num_images):
+            if i > 0:
+                await asyncio.sleep(0.3)
+            print(f"  Image {i+1}: request dispatched (stagger={i * 0.3:.1f}s)")
+            tasks.append(asyncio.create_task(_tracked_generate(i)))
 
         for coro in asyncio.as_completed(tasks):
             idx, result = await coro
             if isinstance(result, Exception):
-                print(f"Image {idx+1} failed: {result}")
+                print(f"  Image {idx+1}: FAILED — {result}")
                 yield (idx, None, str(result))
             else:
+                print(f"  Image {idx+1}: completed successfully")
                 yield (idx, result, None)
 
     async def _refine_single_image_async(
@@ -650,8 +679,8 @@ IMPORTANT OUTPUT REQUIREMENTS:
 
             except RuntimeError as e:
                 if attempt < max_retries - 1:
-                    wait = 2 ** attempt
-                    print(f"Refine {index+1}: incomplete response (attempt {attempt+1}/{max_retries}), retrying in {wait}s...")
+                    wait = 2 ** attempt + random.uniform(0, 1)
+                    print(f"Refine {index+1}: incomplete response (attempt {attempt+1}/{max_retries}), retrying in {wait:.1f}s...")
                     if on_retry:
                         on_retry(index, attempt + 1, max_retries)
                     await asyncio.sleep(wait)
@@ -660,15 +689,19 @@ IMPORTANT OUTPUT REQUIREMENTS:
 
             except Exception as e:
                 error_msg = str(e)
-                is_retryable = '503' in error_msg or '429' in error_msg or 'unavailable' in error_msg.lower()
+                is_429 = '429' in error_msg or 'quota' in error_msg.lower()
+                is_retryable = is_429 or '503' in error_msg or 'unavailable' in error_msg.lower()
                 if is_retryable and attempt < max_retries - 1:
-                    wait = 2 ** attempt
-                    print(f"Warning: Refine {index+1} got transient error (attempt {attempt+1}/{max_retries}), retrying in {wait}s...")
+                    if is_429:
+                        wait = 5 * (2 ** attempt) + random.uniform(0, 2)  # ~5s, ~12s, ~22s
+                    else:
+                        wait = 2 ** attempt + random.uniform(0, 1)        # ~1s, ~3s, ~5s
+                    print(f"Warning: Refine {index+1} got transient error (attempt {attempt+1}/{max_retries}), retrying in {wait:.1f}s...")
                     if on_retry:
                         on_retry(index, attempt + 1, max_retries)
                     await asyncio.sleep(wait)
                     continue
-                if '429' in error_msg or 'quota' in error_msg.lower():
+                if is_429:
                     raise RuntimeError(f"The server is busy. Please wait a moment and try again.")
                 else:
                     raise RuntimeError(f"Image refinement was unsuccessful")
@@ -723,13 +756,18 @@ Output a single modified sketch. GRAYSCALE ONLY — no color.
             except Exception as e:
                 return (i, e)
 
+        # Stagger task creation to avoid hitting rate limits with simultaneous requests
         tasks = []
+        stagger_idx = 0
         for i, img_bytes in enumerate(source_image_bytes_list):
             if img_bytes is None:
                 # Yield error immediately for images that failed to load
                 yield (i, None, "Could not load the source image for refinement")
             else:
+                if stagger_idx > 0:
+                    await asyncio.sleep(0.3)
                 tasks.append(asyncio.create_task(_tracked_refine(i)))
+                stagger_idx += 1
 
         for coro in asyncio.as_completed(tasks):
             idx, result = await coro

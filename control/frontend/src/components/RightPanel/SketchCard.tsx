@@ -9,12 +9,13 @@ interface SketchCardProps {
   sketch: Sketch;
   onExpand: () => void;
   onDownload: () => void;
+  isGenerating?: boolean;
   selectionMode?: boolean;
   isSelected?: boolean;
   onToggleSelect?: () => void;
 }
 
-export default function SketchCard({ sketch, onExpand, onDownload, selectionMode, isSelected, onToggleSelect }: SketchCardProps) {
+export default function SketchCard({ sketch, onExpand, onDownload, isGenerating, selectionMode, isSelected, onToggleSelect }: SketchCardProps) {
   const imageSrc = sketch.imagePath ? getImageUrl(sketch.imagePath) : null;
   const { isLoading, hasError, imgSrc, handleLoad, handleError } = useImageLoad({ src: imageSrc });
 
@@ -92,17 +93,12 @@ export default function SketchCard({ sketch, onExpand, onDownload, selectionMode
         )}
       </div>
 
-      {/* Hover overlay */}
-      <div className={`sketch-card-overlay ${selectionMode ? '' : 'group-hover:opacity-100'}`}>
-        {/* Resolution info */}
-        {sketch.resolution && (
-          <div className="absolute top-3 right-3">
-            <span className="text-[10px] text-swag-text-tertiary bg-black/60 px-1.5 py-0.5 rounded">
-              {sketch.resolution[0]}x{sketch.resolution[1]}
-            </span>
-          </div>
-        )}
-
+      {/* Hover overlay — always visible during generation for completed cards */}
+      <div className={`sketch-card-overlay ${
+        isGenerating && !selectionMode && sketch.imagePath
+          ? 'opacity-100'
+          : selectionMode ? '' : 'group-hover:opacity-100'
+      }`}>
         {/* Bottom: actions */}
         <div className="flex items-center gap-2">
           <button
@@ -126,6 +122,7 @@ export default function SketchCard({ sketch, onExpand, onDownload, selectionMode
           </button>
         </div>
       </div>
+
     </div>
   );
 }

@@ -19,3 +19,4 @@ test_pipeline.py
 .code-hash
 .gitignore
 python-backend.log
+design_doc/Interview_Prep.md
