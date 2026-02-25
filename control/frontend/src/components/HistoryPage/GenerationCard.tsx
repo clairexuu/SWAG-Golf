@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import JSZip from 'jszip';
-import { DownloadIcon, ExpandIcon } from '../shared/Icons';
+import { DownloadIcon, ExpandIcon, ErrorCircleIcon } from '../shared/Icons';
 import { getGeneratedImageUrl } from '../../services/api';
 import type { GenerationSummary } from '../../types';
 
@@ -26,6 +26,17 @@ interface GenerationCardProps {
 
 export default function GenerationCard({ generation, onImageClick, index }: GenerationCardProps) {
   const [downloading, setDownloading] = useState(false);
+  const [failedImages, setFailedImages] = useState<Set<number>>(new Set());
+
+  const handleImageError = useCallback((imgIndex: number) => {
+    setFailedImages(prev => {
+      const next = new Set(prev);
+      next.add(imgIndex);
+      return next;
+    });
+  }, []);
+
+  const availableCount = generation.images.length - failedImages.size;
 
   const handleDownloadAll = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -33,7 +44,7 @@ export default function GenerationCard({ generation, onImageClick, index }: Gene
     try {
       const zip = new JSZip();
       await Promise.all(
-        generation.images.map(async (filename, i) => {
+        generation.images.filter((_, i) => !failedImages.has(i)).map(async (filename, i) => {
           try {
             const response = await fetch(getGeneratedImageUrl(generation.dirName, filename));
             const blob = await response.blob();
@@ -103,8 +114,12 @@ export default function GenerationCard({ generation, onImageClick, index }: Gene
           </div>
           <button
             onClick={handleDownloadAll}
-            disabled={downloading}
-            className="flex-shrink-0 flex items-center gap-1.5 text-xs text-swag-text-tertiary hover:text-swag-green transition-colors px-2 py-1 rounded hover:bg-surface-3"
+            disabled={downloading || availableCount === 0}
+            className={`flex-shrink-0 flex items-center gap-1.5 text-xs transition-colors px-2 py-1 rounded ${
+              availableCount === 0
+                ? 'text-swag-text-quaternary opacity-40 cursor-not-allowed'
+                : 'text-swag-text-tertiary hover:text-swag-green hover:bg-surface-3'
+            }`}
             title="Download all sketches"
           >
             <DownloadIcon className={`w-3.5 h-3.5 ${downloading ? 'animate-pulse' : ''}`} />
@@ -115,34 +130,47 @@ export default function GenerationCard({ generation, onImageClick, index }: Gene
 
       {/* Thumbnail strip */}
       <div className="generation-card-thumbnails">
-        {generation.images.map((filename, imgIndex) => (
-          <div key={filename} className="generation-card-thumb group relative">
-            <img
-              src={getGeneratedImageUrl(generation.dirName, filename)}
-              alt={`Sketch ${imgIndex + 1}`}
-              className="w-full h-full object-cover"
-              loading="lazy"
-              onClick={() => onImageClick(imgIndex)}
-            />
-            {/* Hover overlay with actions */}
-            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
-              <button
-                onClick={() => onImageClick(imgIndex)}
-                className="p-1 text-swag-white hover:text-swag-green transition-colors"
-                title="Expand"
-              >
-                <ExpandIcon className="w-3.5 h-3.5" />
-              </button>
-              <button
-                onClick={(e) => handleDownloadSingle(e, filename)}
-                className="p-1 text-swag-white hover:text-swag-green transition-colors"
-                title="Download"
-              >
-                <DownloadIcon className="w-3.5 h-3.5" />
-              </button>
+        {generation.images.map((filename, imgIndex) => {
+          const isFailed = failedImages.has(imgIndex);
+          return (
+            <div key={filename} className="generation-card-thumb group relative">
+              {isFailed ? (
+                <div className="w-full h-full flex flex-col items-center justify-center gap-1 bg-surface-2">
+                  <ErrorCircleIcon className="w-4 h-4 text-swag-text-quaternary" />
+                  <span className="text-[8px] text-swag-text-quaternary uppercase tracking-wider">Unavailable</span>
+                </div>
+              ) : (
+                <img
+                  src={getGeneratedImageUrl(generation.dirName, filename)}
+                  alt={`Sketch ${imgIndex + 1}`}
+                  className="w-full h-full object-cover"
+                  loading="lazy"
+                  onClick={() => onImageClick(imgIndex)}
+                  onError={() => handleImageError(imgIndex)}
+                />
+              )}
+              {/* Hover overlay with actions */}
+              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
+                <button
+                  onClick={() => onImageClick(imgIndex)}
+                  className="p-1 text-swag-white hover:text-swag-green transition-colors"
+                  title="Expand"
+                >
+                  <ExpandIcon className="w-3.5 h-3.5" />
+                </button>
+                {!isFailed && (
+                  <button
+                    onClick={(e) => handleDownloadSingle(e, filename)}
+                    className="p-1 text-swag-white hover:text-swag-green transition-colors"
+                    title="Download"
+                  >
+                    <DownloadIcon className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import type { Sketch } from '../../types';
 import { DownloadIcon, ExpandIcon, ErrorCircleIcon, CheckIcon, SpinnerIcon, ImagePlaceholderIcon } from '../shared/Icons';
 import { useImageLoad } from '../../hooks/useImageLoad';
@@ -13,11 +14,17 @@ interface SketchCardProps {
   selectionMode?: boolean;
   isSelected?: boolean;
   onToggleSelect?: () => void;
+  onImageLoadError?: () => void;
 }
 
-export default function SketchCard({ sketch, onExpand, onDownload, isGenerating, selectionMode, isSelected, onToggleSelect }: SketchCardProps) {
+export default function SketchCard({ sketch, onExpand, onDownload, isGenerating, selectionMode, isSelected, onToggleSelect, onImageLoadError }: SketchCardProps) {
   const imageSrc = sketch.imagePath ? getImageUrl(sketch.imagePath) : null;
   const { isLoading, hasError, imgSrc, handleLoad, handleError } = useImageLoad({ src: imageSrc });
+  const imageUnavailable = !sketch.imagePath || hasError;
+
+  useEffect(() => {
+    if (hasError) onImageLoadError?.();
+  }, [hasError, onImageLoadError]);
 
   // Error state — show error message instead of image
   if (sketch.error) {
@@ -95,7 +102,7 @@ export default function SketchCard({ sketch, onExpand, onDownload, isGenerating,
 
       {/* Hover overlay — always visible during generation for completed cards */}
       <div className={`sketch-card-overlay ${
-        isGenerating && !selectionMode && sketch.imagePath
+        isGenerating && !selectionMode && sketch.imagePath && !hasError
           ? 'opacity-100'
           : selectionMode ? '' : 'group-hover:opacity-100'
       }`}>
@@ -104,9 +111,14 @@ export default function SketchCard({ sketch, onExpand, onDownload, isGenerating,
           <button
             onClick={(e) => {
               e.stopPropagation();
-              onDownload();
+              if (!imageUnavailable) onDownload();
             }}
-            className="flex-1 flex items-center justify-center gap-1.5 bg-swag-green text-black font-bold text-xs uppercase tracking-wider py-2 rounded-btn hover:bg-swag-green-muted transition-all active:scale-[0.97]"
+            disabled={imageUnavailable}
+            className={`flex-1 flex items-center justify-center gap-1.5 font-bold text-xs uppercase tracking-wider py-2 rounded-btn transition-all ${
+              imageUnavailable
+                ? 'bg-swag-green/40 text-black/40 cursor-not-allowed'
+                : 'bg-swag-green text-black hover:bg-swag-green-muted active:scale-[0.97]'
+            }`}
           >
             <DownloadIcon className="w-3.5 h-3.5" />
             Download

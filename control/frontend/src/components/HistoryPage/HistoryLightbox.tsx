@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
-import { CloseIcon, ChevronLeftIcon, ChevronRightIcon, DownloadIcon } from '../shared/Icons';
+import { CloseIcon, ChevronLeftIcon, ChevronRightIcon, DownloadIcon, ErrorCircleIcon, SpinnerIcon } from '../shared/Icons';
 import { getGeneratedImageUrl } from '../../services/api';
+import { useImageLoad } from '../../hooks/useImageLoad';
 
 interface HistoryLightboxProps {
   dirName: string;
@@ -30,6 +31,10 @@ export default function HistoryLightbox({ dirName, images, initialIndex, onClose
     return () => window.removeEventListener('keydown', handler);
   }, [onClose, goNext, goPrev]);
 
+  const imageSrc = getGeneratedImageUrl(dirName, images[currentIndex]);
+  const { isLoading, hasError, imgSrc, handleLoad, handleError } = useImageLoad({ src: imageSrc });
+  const imageUnavailable = hasError;
+
   const handleDownload = async (e: React.MouseEvent) => {
     e.stopPropagation();
     const imageUrl = getGeneratedImageUrl(dirName, images[currentIndex]);
@@ -57,7 +62,10 @@ export default function HistoryLightbox({ dirName, images, initialIndex, onClose
 
       <button
         onClick={handleDownload}
-        className="absolute top-4 left-4 flex items-center gap-2 bg-surface-2/80 text-swag-white px-3 py-2 rounded-btn text-sm font-medium hover:bg-surface-3 transition-all z-10"
+        disabled={imageUnavailable}
+        className={`absolute top-4 left-4 flex items-center gap-2 bg-surface-2/80 text-swag-white px-3 py-2 rounded-btn text-sm font-medium transition-all z-10 ${
+          imageUnavailable ? 'opacity-40 cursor-not-allowed' : 'hover:bg-surface-3'
+        }`}
       >
         <DownloadIcon className="w-4 h-4" />
         Download
@@ -80,12 +88,30 @@ export default function HistoryLightbox({ dirName, images, initialIndex, onClose
         </>
       )}
 
-      <img
-        src={getGeneratedImageUrl(dirName, images[currentIndex])}
-        alt={`Generated sketch ${currentIndex + 1}`}
-        className="lightbox-image"
-        onClick={(e) => e.stopPropagation()}
-      />
+      <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+        {hasError ? (
+          <div className="flex flex-col items-center gap-4 text-center px-8">
+            <ErrorCircleIcon className="w-16 h-16 text-swag-text-tertiary" />
+            <p className="text-sm font-medium text-swag-text-secondary uppercase tracking-wider">Image Unavailable</p>
+            <p className="text-xs text-swag-text-tertiary">The image could not be loaded</p>
+          </div>
+        ) : imgSrc ? (
+          <>
+            <img
+              src={imgSrc}
+              alt={`Generated sketch ${currentIndex + 1}`}
+              className={`lightbox-image transition-opacity duration-300 ${isLoading ? 'opacity-0' : 'opacity-100'}`}
+              onLoad={handleLoad}
+              onError={handleError}
+            />
+            {isLoading && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <SpinnerIcon className="w-10 h-10 text-swag-text-tertiary" />
+              </div>
+            )}
+          </>
+        ) : null}
+      </div>
 
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-surface-2/80 text-swag-white text-sm font-medium px-4 py-2 rounded-btn z-10">
         {currentIndex + 1} of {images.length}

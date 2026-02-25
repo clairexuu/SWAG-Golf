@@ -1,6 +1,12 @@
 # Release History
 
-## v1.0.3 - Fix Sketch Refinement
+## v1.0.4 
+
+- Disabled download of corrupted images
+- Added stagger in image generation request and retry to avoid failed generations
+- Added download for generated image while others are still generating
+
+## v1.0.3 
 
 - Fixed sketch refinement not working
 

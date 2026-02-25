@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import JSZip from 'jszip';
 import type { Sketch } from '../../types';
 import SketchCard from './SketchCard';
@@ -28,8 +28,22 @@ interface SketchGridProps {
 
 export default function SketchGrid({ sketches, isGenerating, isRestarting, serverBusy, refiningIndices, error, errorCode, onImageClick, onCancel, onRetry, onRestart, selectionMode, selectedIndices, onToggleSelect }: SketchGridProps) {
   const isActive = isGenerating || (refiningIndices != null && refiningIndices.size > 0);
-  const availableCount = sketches.filter(s => s.imagePath).length;
+  const [imageLoadErrors, setImageLoadErrors] = useState<Set<string>>(new Set());
+  const availableCount = sketches.filter(s => s.imagePath && !s.error && !imageLoadErrors.has(s.id)).length;
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  // Reset load errors when sketches change (new generation)
+  useEffect(() => {
+    setImageLoadErrors(new Set());
+  }, [sketches.length]);
+
+  const handleImageLoadError = useCallback((sketchId: string) => {
+    setImageLoadErrors(prev => {
+      const next = new Set(prev);
+      next.add(sketchId);
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     if (!isActive) return;
@@ -60,7 +74,7 @@ export default function SketchGrid({ sketches, isGenerating, isRestarting, serve
   const handleDownloadAll = async () => {
     const zip = new JSZip();
     await Promise.all(
-      sketches.filter(s => s.imagePath).map(async (sketch, i) => {
+      sketches.filter(s => s.imagePath && !s.error && !imageLoadErrors.has(s.id)).map(async (sketch, i) => {
         try {
           const response = await fetch(getImageUrl(sketch.imagePath!));
           const blob = await response.blob();
@@ -217,6 +231,7 @@ export default function SketchGrid({ sketches, isGenerating, isRestarting, serve
               selectionMode={selectionMode}
               isSelected={selectedIndices?.has(index)}
               onToggleSelect={() => onToggleSelect?.(index)}
+              onImageLoadError={() => handleImageLoadError(sketch.id)}
             />
           )
         )}
