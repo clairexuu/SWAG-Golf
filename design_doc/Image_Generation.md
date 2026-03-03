@@ -147,6 +147,40 @@ The system supports three generation modes:
 
 Each mode is implemented across all layers: `NanaBananaClient` → `NanaBananaAdapter` → `ImageGenerator` → `PipelineService` → API route.
 
+### Rate Limiting
+
+Gemini Pro Image has a **20 RPM** (requests per minute) hard cap. To stay safely below this, `nano_banana_client.py` implements a three-layer throttling strategy:
+
+**1. Global Rate Limiter (`GeminiRateLimiter`)**
+
+A singleton sliding-window rate limiter gates every Gemini API call across all code paths. It tracks timestamps of recent calls in a `deque` and blocks new calls until a slot is available.
+
+| Config | Value | Purpose |
+|--------|-------|---------|
+| `RATE_LIMIT_RPM` | 16 | Safe ceiling (20% buffer below 20 RPM cap) |
+| `RATE_LIMIT_WINDOW` | 60s | Sliding window size |
+| `STAGGER_DELAY` | 4.0s | Minimum gap between parallel image requests |
+
+The limiter exposes `acquire_sync()` (for `ThreadPoolExecutor` workers) and `acquire_async()` (for `asyncio` tasks), both backed by a single `threading.Lock` for thread-safe timestamp access. Each of the four API-calling methods (`_generate_single_image`, `_generate_single_image_refine`, `_generate_single_image_async`, `_refine_single_image_async`) acquires a slot before calling `generate_content()`.
+
+**2. Staggered Dispatch**
+
+Parallel image requests within a batch are staggered by `STAGGER_DELAY` (4s). For a 4-image batch, requests fire at t=0, t=4, t=8, t=12 — spreading the load over ~12s instead of bursting.
+
+**3. Conservative Retry Backoff**
+
+When rate limits or server errors are hit, retries use exponential backoff with jitter:
+
+| Error | Backoff formula | Approximate waits |
+|-------|----------------|-------------------|
+| 429 (rate limit) | `15 * 2^attempt + rand(0, 5)` | ~15s, ~35s, ~65s |
+| 503 (server error) | `5 * 2^attempt + rand(0, 2)` | ~5s, ~12s, ~22s |
+| Incomplete response | `2^attempt + rand(0, 1)` | ~1s, ~3s, ~5s |
+
+Max retries per image: 3.
+
+All throttling is logged with `[RateLimiter]` prefix for observability.
+
 ### Async Dependency
 
 Async generation requires the `aiohttp` extra for the Google GenAI SDK:

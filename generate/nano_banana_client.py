@@ -7,12 +7,96 @@ import os
 import time
 import base64
 import random
+import threading
+from collections import deque
 from io import BytesIO
 from typing import AsyncGenerator, List, Optional, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from google import genai
 from google.genai import types
 from PIL import Image
+
+
+# ── Rate Limiter Configuration ──────────────────────────────────────────
+RATE_LIMIT_RPM = 16       # Safe ceiling below Gemini's 20 RPM hard cap
+RATE_LIMIT_WINDOW = 60    # Sliding window in seconds
+STAGGER_DELAY = 4.0       # Seconds between parallel image requests
+
+
+class GeminiRateLimiter:
+    """
+    In-process sliding-window rate limiter for Gemini API calls.
+
+    Thread-safe singleton shared across all code paths (sync ThreadPoolExecutor,
+    async gather, streaming tasks). Tracks timestamps of recent API calls in a
+    deque and blocks new calls until a slot is available within the RPM budget.
+    """
+
+    _instance = None
+    _creation_lock = threading.Lock()
+
+    def __new__(cls):
+        with cls._creation_lock:
+            if cls._instance is None:
+                cls._instance = super().__new__(cls)
+                cls._instance._initialized = False
+            return cls._instance
+
+    def __init__(self):
+        if self._initialized:
+            return
+        self._timestamps: deque = deque()
+        self._lock = threading.Lock()
+        self._max_rpm = RATE_LIMIT_RPM
+        self._window = RATE_LIMIT_WINDOW
+        self._initialized = True
+
+    def _evict_and_check(self) -> float:
+        """Under lock: evict old entries, return wait time (0 if slot available)."""
+        now = time.time()
+        cutoff = now - self._window
+        while self._timestamps and self._timestamps[0] < cutoff:
+            self._timestamps.popleft()
+        if len(self._timestamps) < self._max_rpm:
+            return 0.0
+        oldest = self._timestamps[0]
+        return max((oldest + self._window) - now + 0.1, 0.0)
+
+    def _record(self):
+        """Under lock: record a new call timestamp."""
+        self._timestamps.append(time.time())
+
+    def acquire_sync(self, label: str = ""):
+        """Block until a rate-limit slot is available (for sync/threaded code)."""
+        while True:
+            with self._lock:
+                wait = self._evict_and_check()
+                if wait == 0:
+                    self._record()
+                    count = len(self._timestamps)
+            if wait == 0:
+                print(f"[RateLimiter] {label} slot acquired ({count}/{self._max_rpm} used)")
+                return
+            print(f"[RateLimiter] {label} throttled — waiting {wait:.1f}s")
+            time.sleep(wait)
+
+    async def acquire_async(self, label: str = ""):
+        """Await until a rate-limit slot is available (for async code)."""
+        while True:
+            with self._lock:
+                wait = self._evict_and_check()
+                if wait == 0:
+                    self._record()
+                    count = len(self._timestamps)
+            if wait == 0:
+                print(f"[RateLimiter] {label} slot acquired ({count}/{self._max_rpm} used)")
+                return
+            print(f"[RateLimiter] {label} throttled — waiting {wait:.1f}s")
+            await asyncio.sleep(wait)
+
+
+# Module-level singleton — shared across all NanaBananaClient instances
+rate_limiter = GeminiRateLimiter()
 
 
 REFINE_SYSTEM_PROMPT = """You are a sketch editing assistant. You receive an existing sketch and modification instructions.
@@ -132,7 +216,7 @@ IMPORTANT OUTPUT REQUIREMENTS:
             futures = {}
             for i in range(num_images):
                 if i > 0:
-                    time.sleep(0.3)
+                    time.sleep(STAGGER_DELAY)
                 futures[executor.submit(
                     self._generate_single_image,
                     enhanced_prompt, ref_image_bytes, aspect_ratio, image_size, temperature, i
@@ -181,6 +265,9 @@ IMPORTANT OUTPUT REQUIREMENTS:
         max_retries = 3
         for attempt in range(max_retries):
             try:
+                # Acquire rate-limit slot before calling Gemini
+                rate_limiter.acquire_sync(label=f"generate[{index}] attempt={attempt}")
+
                 # Create PIL Images from pre-loaded bytes (thread-safe)
                 ref_parts = [Image.open(BytesIO(b)) for b in ref_image_bytes]
                 contents = [enhanced_prompt] + ref_parts
@@ -240,9 +327,9 @@ IMPORTANT OUTPUT REQUIREMENTS:
 
                 if is_retryable and attempt < max_retries - 1:
                     if is_429:
-                        wait = 5 * (2 ** attempt) + random.uniform(0, 2)  # ~5s, ~12s, ~22s
+                        wait = 15 * (2 ** attempt) + random.uniform(0, 5)  # ~15s, ~35s, ~65s
                     else:
-                        wait = 2 ** attempt + random.uniform(0, 1)        # ~1s, ~3s, ~5s
+                        wait = 5 * (2 ** attempt) + random.uniform(0, 2)   # ~5s, ~12s, ~22s
                     print(f"Warning: Image {index+1} got transient error (attempt {attempt+1}/{max_retries}), retrying in {wait:.1f}s...")
                     time.sleep(wait)
                     continue
@@ -314,7 +401,7 @@ Output a single modified sketch. GRAYSCALE ONLY — no color.
                 if img_bytes is None:
                     continue
                 if stagger_idx > 0:
-                    time.sleep(0.3)
+                    time.sleep(STAGGER_DELAY)
                 futures[executor.submit(
                     self._generate_single_image_refine,
                     enhanced_prompt, img_bytes, aspect_ratio, temperature, i
@@ -363,6 +450,9 @@ Output a single modified sketch. GRAYSCALE ONLY — no color.
         max_retries = 3
         for attempt in range(max_retries):
             try:
+                # Acquire rate-limit slot before calling Gemini
+                rate_limiter.acquire_sync(label=f"refine[{index}] attempt={attempt}")
+
                 source_img = Image.open(BytesIO(source_image_bytes))
                 contents = [enhanced_prompt, source_img]
 
@@ -421,9 +511,9 @@ Output a single modified sketch. GRAYSCALE ONLY — no color.
 
                 if is_retryable and attempt < max_retries - 1:
                     if is_429:
-                        wait = 5 * (2 ** attempt) + random.uniform(0, 2)  # ~5s, ~12s, ~22s
+                        wait = 15 * (2 ** attempt) + random.uniform(0, 5)  # ~15s, ~35s, ~65s
                     else:
-                        wait = 2 ** attempt + random.uniform(0, 1)        # ~1s, ~3s, ~5s
+                        wait = 5 * (2 ** attempt) + random.uniform(0, 2)   # ~5s, ~12s, ~22s
                     print(f"Warning: Refine {index+1} got transient error (attempt {attempt+1}/{max_retries}), retrying in {wait:.1f}s...")
                     time.sleep(wait)
                     continue
@@ -471,6 +561,9 @@ Output a single modified sketch. GRAYSCALE ONLY — no color.
         max_retries = 3
         for attempt in range(max_retries):
             try:
+                # Acquire rate-limit slot before calling Gemini
+                await rate_limiter.acquire_async(label=f"generate_async[{index}] attempt={attempt}")
+
                 ref_parts = [Image.open(BytesIO(b)) for b in ref_image_bytes]
                 contents = [enhanced_prompt] + ref_parts
 
@@ -506,9 +599,9 @@ Output a single modified sketch. GRAYSCALE ONLY — no color.
                 is_retryable = is_429 or '503' in error_msg or 'unavailable' in error_msg.lower()
                 if is_retryable and attempt < max_retries - 1:
                     if is_429:
-                        wait = 5 * (2 ** attempt) + random.uniform(0, 2)  # ~5s, ~12s, ~22s
+                        wait = 15 * (2 ** attempt) + random.uniform(0, 5)  # ~15s, ~35s, ~65s
                     else:
-                        wait = 2 ** attempt + random.uniform(0, 1)        # ~1s, ~3s, ~5s
+                        wait = 5 * (2 ** attempt) + random.uniform(0, 2)   # ~5s, ~12s, ~22s
                     print(f"Warning: Image {index+1} got transient error (attempt {attempt+1}/{max_retries}), retrying in {wait:.1f}s...")
                     if on_retry:
                         on_retry(index, attempt + 1, max_retries)
@@ -559,7 +652,7 @@ IMPORTANT OUTPUT REQUIREMENTS:
         # Stagger requests to avoid hitting rate limits with simultaneous calls
         async def _staggered(i):
             if i > 0:
-                await asyncio.sleep(0.3 * i)
+                await asyncio.sleep(STAGGER_DELAY * i)
             return await self._generate_single_image_async(
                 enhanced_prompt, ref_image_bytes, aspect_ratio, image_size, temperature, i
             )
@@ -633,8 +726,8 @@ IMPORTANT OUTPUT REQUIREMENTS:
         tasks = []
         for i in range(num_images):
             if i > 0:
-                await asyncio.sleep(0.3)
-            print(f"  Image {i+1}: request dispatched (stagger={i * 0.3:.1f}s)")
+                await asyncio.sleep(STAGGER_DELAY)
+            print(f"  Image {i+1}: request dispatched (stagger={i * STAGGER_DELAY:.1f}s)")
             tasks.append(asyncio.create_task(_tracked_generate(i)))
 
         for coro in asyncio.as_completed(tasks):
@@ -659,6 +752,9 @@ IMPORTANT OUTPUT REQUIREMENTS:
         max_retries = 3
         for attempt in range(max_retries):
             try:
+                # Acquire rate-limit slot before calling Gemini
+                await rate_limiter.acquire_async(label=f"refine_async[{index}] attempt={attempt}")
+
                 source_img = Image.open(BytesIO(source_image_bytes))
                 contents = [enhanced_prompt, source_img]
 
@@ -693,9 +789,9 @@ IMPORTANT OUTPUT REQUIREMENTS:
                 is_retryable = is_429 or '503' in error_msg or 'unavailable' in error_msg.lower()
                 if is_retryable and attempt < max_retries - 1:
                     if is_429:
-                        wait = 5 * (2 ** attempt) + random.uniform(0, 2)  # ~5s, ~12s, ~22s
+                        wait = 15 * (2 ** attempt) + random.uniform(0, 5)  # ~15s, ~35s, ~65s
                     else:
-                        wait = 2 ** attempt + random.uniform(0, 1)        # ~1s, ~3s, ~5s
+                        wait = 5 * (2 ** attempt) + random.uniform(0, 2)   # ~5s, ~12s, ~22s
                     print(f"Warning: Refine {index+1} got transient error (attempt {attempt+1}/{max_retries}), retrying in {wait:.1f}s...")
                     if on_retry:
                         on_retry(index, attempt + 1, max_retries)
@@ -765,7 +861,7 @@ Output a single modified sketch. GRAYSCALE ONLY — no color.
                 yield (i, None, "Could not load the source image for refinement")
             else:
                 if stagger_idx > 0:
-                    await asyncio.sleep(0.3)
+                    await asyncio.sleep(STAGGER_DELAY)
                 tasks.append(asyncio.create_task(_tracked_refine(i)))
                 stagger_idx += 1
 
