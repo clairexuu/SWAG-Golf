@@ -1,5 +1,9 @@
 # Release History
 
+## v1.0.5
+
+- Updated Gemini API key
+
 ## v1.0.4 
 
 - Disabled download of corrupted images
